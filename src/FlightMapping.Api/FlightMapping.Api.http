@@ -1,0 +1,70 @@
+@FlightMapping.Api_HostAddress = http://localhost:5223
+
+GET {{FlightMapping.Api_HostAddress}}/api/health
+Accept: application/json
+
+###
+
+GET {{FlightMapping.Api_HostAddress}}/api/health/sabre/token
+Accept: application/json
+
+###
+
+GET {{FlightMapping.Api_HostAddress}}/api/health/sabre/connection
+Accept: application/json
+
+###
+
+# Round-trip: JFK → LHR
+POST {{FlightMapping.Api_HostAddress}}/api/search
+Content-Type: application/json
+
+{
+  "segments": [
+    { "origin": "JFK", "destination": "LHR", "departureDate": "2026-06-15" },
+    { "origin": "LHR", "destination": "JFK", "departureDate": "2026-06-22" }
+  ],
+  "passengers": { "adults": 1 },
+  "preferences": {
+    "cabin": "Economy",
+    "priority": "Balanced"
+  }
+}
+
+###
+
+# One-way: LAX → NRT
+POST {{FlightMapping.Api_HostAddress}}/api/search
+Content-Type: application/json
+
+{
+  "segments": [
+    { "origin": "LAX", "destination": "NRT", "departureDate": "2026-07-01" }
+  ],
+  "passengers": { "adults": 2 },
+  "preferences": {
+    "cabin": "Business",
+    "priority": "Comfort"
+  }
+}
+
+###
+
+# Multi-city: JFK → LHR → CDG → JFK
+POST {{FlightMapping.Api_HostAddress}}/api/search
+Content-Type: application/json
+
+{
+  "segments": [
+    { "origin": "JFK", "destination": "LHR", "departureDate": "2026-08-01" },
+    { "origin": "LHR", "destination": "CDG", "departureDate": "2026-08-05" },
+    { "origin": "CDG", "destination": "JFK", "departureDate": "2026-08-10" }
+  ],
+  "passengers": { "adults": 1 },
+  "preferences": {
+    "cabin": "Economy",
+    "priority": "Price"
+  }
+}
+
+###
