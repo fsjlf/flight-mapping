@@ -18,6 +18,13 @@ public class SabreClient : ISabreClient
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
 
+    // Hotel APIs use PascalCase property names unlike BFM
+    private static readonly JsonSerializerOptions PascalJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+    };
+
     public SabreClient(
         HttpClient httpClient,
         IOptions<SabreOptions> options,
@@ -40,6 +47,35 @@ public class SabreClient : ISabreClient
         {
             _logger.LogError(ex, "Sabre connection test failed");
             return false;
+        }
+    }
+
+    public async Task<(HotelDetailsResponse? Response, string? ErrorBody)> GetHotelDetailsAsync(HotelDetailsRequest request, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(request, PascalJsonOptions);
+            using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+            _logger.LogInformation("Sending GetHotelDetails request to /v5/get/hoteldetails");
+            _logger.LogDebug("Hotel details request body: {RequestBody}", json);
+
+            var response = await _httpClient.PostAsync("/v5/get/hoteldetails", content, cancellationToken);
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Hotel details request failed with {StatusCode}: {Error}", response.StatusCode, responseBody);
+                return (null, responseBody);
+            }
+
+            _logger.LogDebug("Hotel details response body: {ResponseBody}", responseBody);
+            return (JsonSerializer.Deserialize<HotelDetailsResponse>(responseBody, PascalJsonOptions), null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Hotel details request failed");
+            return (null, ex.Message);
         }
     }
 
