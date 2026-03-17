@@ -1821,6 +1821,7 @@ function humanizeFeature(raw: string): string {
     "COMPLIMENTARY FOOD AND BEV": "Meals & Drinks",
     "MEALS AND DRINKS": "Meals & Drinks",
     "FOOD AND BEVERAGES": "Meals & Drinks",
+    "FOOD AND BAR SERVICE": "Meals & Drinks",
     "SNACK": "Snack",
     "ALCOHOLIC BEVERAGES": "Drinks Included",
     "NON ALCOHOLIC BEVERAGES": "Non-Alcoholic Drinks",
@@ -1860,6 +1861,8 @@ function pickNotableFeatures(features: { name: string; free: boolean; group: str
   const priority = ["SA", "BG", "LG", "ML", "TS", "IE", "FF", "UP"];
   // Skip very generic / noisy features
   const skipPatterns = /^(PERSONAL ITEM|CARRY ON|CARRY ON HAND BAGGAGE|HAND BAGGAGE|MILEAGE ACCRUAL|AADVANTAGE|BASIC SEAT|CHANGEABLE TICKET|NON REFUNDABLE|REFUNDABLE)$/i;
+  // Also skip dimension-based carry-on / personal item descriptions (e.g. "CABIN BAG UPTO 56 X 45 X 25CM")
+  const isDimensionNoise = (name: string) => /\d+\s*X\s*\d+\s*X\s*\d+/i.test(name) || /^(CABIN BAG|HANDBAG|HAND BAG)\b/i.test(name);
 
   // ── Pre-aggregate checked bags: count free & chargeable bag features
   // Match: CHECK*, EXCESS BAG, "2 BAGS MAX 32KG", "1ST BAG MAX 23KG", etc.
@@ -1900,6 +1903,7 @@ function pickNotableFeatures(features: { name: string; free: boolean; group: str
 
   for (const f of sorted) {
     if (skipPatterns.test(f.name.trim())) continue;
+    if (isDimensionNoise(f.name.trim())) continue;
     // Skip individual bag features — already aggregated above
     if (f.group === "BG" && isBagFeature(f.name)) continue;
     const humanized = humanizeFeature(f.name);
@@ -1935,11 +1939,16 @@ function buildFareDetailsHtml(ticket: Scenario["tickets"][0]): string {
 
   let html = `<p style="margin:0;line-height:1.7;">${sharedItems.map(termBadge).join("")}</p>`;
 
-  // Determine if brands are the same on all segments — if so, treat amenities
-  // as unified even if Sabre returns slightly different raw features per segment
+  // Determine if this is a same-class product on all segments — if so, treat
+  // amenities as unified even if Sabre returns slightly different raw features.
+  // Check both brand AND cabin: same brand OR same cabin = unified display.
   const flightBrands = flights.map((f: any) => (f.brand || "").toUpperCase().trim());
+  const flightCabins = flights.map((f: any) => (f.cabin || "Economy").toUpperCase().trim());
   const sameBrandAllFlights = flightBrands.length <= 1 ||
     (flightBrands[0] && flightBrands.every((b: string) => b === flightBrands[0]));
+  const sameCabinAllFlights = flightCabins.length <= 1 ||
+    flightCabins.every((c: string) => c === flightCabins[0]);
+  const sameProductAllFlights = sameBrandAllFlights || sameCabinAllFlights;
 
   // Build per-flight amenity lists from brand features
   const perFlightAmenities = flights.map((f: any) => {
@@ -1966,7 +1975,7 @@ function buildFareDetailsHtml(ticket: Scenario["tickets"][0]): string {
   // Same brand on all flights → show unified amenity list (use the richest set)
   // Different brands → compare amenity lists and split if they differ
   const normalise = (items: string[]) => [...items].sort().join("|");
-  const allSameAmenities = sameBrandAllFlights ||
+  const allSameAmenities = sameProductAllFlights ||
     perFlightAmenities.length <= 1 ||
     perFlightAmenities.every((items) => normalise(items) === normalise(perFlightAmenities[0]));
 
