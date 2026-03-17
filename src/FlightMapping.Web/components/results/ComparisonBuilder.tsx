@@ -1798,7 +1798,10 @@ function humanizeFeature(raw: string): string {
     "LIE FLAT BED": "Lie-Flat Seat",
     "LIE FLAT SEAT": "Lie-Flat Seat",
     "LIE-FLAT SEAT": "Lie-Flat Seat",
+    "FULLY FLAT BED": "Lie-Flat Seat",
+    "FLAT BED": "Lie-Flat Seat",
     "ADVANCE SEAT SELECTION": "Seat Selection",
+    "ADVANCED SEAT SELECTION": "Seat Selection",
     "PREFERRED SEAT": "Preferred Seat",
     "SEAT SELECTION": "Seat Selection",
     "BASIC SEAT": "Standard Seat",
@@ -1816,9 +1819,12 @@ function humanizeFeature(raw: string): string {
     "IN FLIGHT WIFI": "Wi-Fi",
     "MEAL": "Meal Included",
     "COMPLIMENTARY FOOD AND BEV": "Meals & Drinks",
+    "MEALS AND DRINKS": "Meals & Drinks",
+    "FOOD AND BEVERAGES": "Meals & Drinks",
     "SNACK": "Snack",
     "ALCOHOLIC BEVERAGES": "Drinks Included",
     "NON ALCOHOLIC BEVERAGES": "Non-Alcoholic Drinks",
+    "HAND BAGGAGE": "Carry-On Bag",
     "FLAGSHIP CHECKIN": "Flagship Check-In",
     "MAIN CABIN EXTRA": "Main Cabin Extra",
     "PRE RESERVED SEATS": "Pre-Reserved Seat",
@@ -1829,6 +1835,21 @@ function humanizeFeature(raw: string): string {
   };
   const upper = raw.toUpperCase().trim();
   if (map[upper]) return map[upper];
+  // Regex-based patterns for weight/count bag descriptions
+  // e.g. "2 BAGS MAX 32KG" → "2x Checked Bags", "1ST BAG MAX 23KG" → "1 Checked Bag"
+  const bagCountMatch = upper.match(/^(\d+)\s*BAGS?\b/);
+  if (bagCountMatch) {
+    const n = parseInt(bagCountMatch[1], 10);
+    return n === 1 ? "1 Checked Bag" : `${n}x Checked Bags`;
+  }
+  const bagOrdinalMatch = upper.match(/^(1ST|2ND|3RD|\dTH)\s*BAG\b/);
+  if (bagOrdinalMatch) {
+    const ord = bagOrdinalMatch[1];
+    if (ord === "1ST") return "1 Checked Bag";
+    if (ord === "2ND") return "2 Checked Bags";
+    if (ord === "3RD") return "3 Checked Bags";
+    return "Checked Bag";
+  }
   // Fallback: title case the raw name
   return raw.replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\b(And|Or|Of|The|A)\b/g, (w) => w.toLowerCase());
 }
@@ -1838,18 +1859,25 @@ function pickNotableFeatures(features: { name: string; free: boolean; group: str
   // Priority order: seat amenities, baggage, lounge, boarding, meals
   const priority = ["SA", "BG", "LG", "ML", "TS", "IE", "FF", "UP"];
   // Skip very generic / noisy features
-  const skipPatterns = /^(PERSONAL ITEM|CARRY ON|CARRY ON HAND BAGGAGE|MILEAGE ACCRUAL|AADVANTAGE|BASIC SEAT|CHANGEABLE TICKET|NON REFUNDABLE|REFUNDABLE)$/i;
+  const skipPatterns = /^(PERSONAL ITEM|CARRY ON|CARRY ON HAND BAGGAGE|HAND BAGGAGE|MILEAGE ACCRUAL|AADVANTAGE|BASIC SEAT|CHANGEABLE TICKET|NON REFUNDABLE|REFUNDABLE)$/i;
 
   // ── Pre-aggregate checked bags: count free & chargeable bag features
-  const bagChecked = features.filter(
-    (f) => f.group === "BG" && /CHECK|EXCESS BAG/i.test(f.name) && !/CARRY|PERSONAL/i.test(f.name)
-  );
-  const freeBags = bagChecked.filter((f) => f.free).length;
-  const chargeableBags = bagChecked.filter((f) => !f.free).length;
+  // Match: CHECK*, EXCESS BAG, "2 BAGS MAX 32KG", "1ST BAG MAX 23KG", etc.
+  const isBagFeature = (name: string) =>
+    /CHECK|EXCESS BAG|\d+\s*BAGS?\b|\d(ST|ND|RD|TH)\s*BAG\b/i.test(name) && !/CARRY|PERSONAL|HAND/i.test(name);
+  const bagChecked = features.filter((f) => f.group === "BG" && isBagFeature(f.name));
+  // Some features encode count in the name (e.g. "2 BAGS MAX 32KG" = 2 bags in one feature)
+  let freeBagCount = 0;
+  let chargeableBagCount = 0;
+  for (const f of bagChecked) {
+    const countMatch = f.name.toUpperCase().match(/^(\d+)\s*BAGS?\b/);
+    const n = countMatch ? parseInt(countMatch[1], 10) : 1;
+    if (f.free) freeBagCount += n; else chargeableBagCount += n;
+  }
   let bagLabel = "";
-  if (freeBags > 0) {
-    bagLabel = freeBags === 1 ? "1 Checked Bag" : `${freeBags}x Checked Bags`;
-  } else if (chargeableBags > 0) {
+  if (freeBagCount > 0) {
+    bagLabel = freeBagCount === 1 ? "1 Checked Bag" : `${freeBagCount}x Checked Bags`;
+  } else if (chargeableBagCount > 0) {
     bagLabel = "Checked Bag (paid)";
   }
 
@@ -1873,7 +1901,7 @@ function pickNotableFeatures(features: { name: string; free: boolean; group: str
   for (const f of sorted) {
     if (skipPatterns.test(f.name.trim())) continue;
     // Skip individual bag features — already aggregated above
-    if (f.group === "BG" && /CHECK|EXCESS BAG/i.test(f.name) && !/CARRY|PERSONAL/i.test(f.name)) continue;
+    if (f.group === "BG" && isBagFeature(f.name)) continue;
     const humanized = humanizeFeature(f.name);
     if (seen.has(humanized)) continue;
     seen.add(humanized);
@@ -1907,6 +1935,12 @@ function buildFareDetailsHtml(ticket: Scenario["tickets"][0]): string {
 
   let html = `<p style="margin:0;line-height:1.7;">${sharedItems.map(termBadge).join("")}</p>`;
 
+  // Determine if brands are the same on all segments — if so, treat amenities
+  // as unified even if Sabre returns slightly different raw features per segment
+  const flightBrands = flights.map((f: any) => (f.brand || "").toUpperCase().trim());
+  const sameBrandAllFlights = flightBrands.length <= 1 ||
+    (flightBrands[0] && flightBrands.every((b: string) => b === flightBrands[0]));
+
   // Build per-flight amenity lists from brand features
   const perFlightAmenities = flights.map((f: any) => {
     if (f.features && f.features.length > 0) {
@@ -1929,19 +1963,22 @@ function buildFareDetailsHtml(ticket: Scenario["tickets"][0]): string {
     return html;
   }
 
-  // Compare amenity sets regardless of order — same items = same amenities
+  // Same brand on all flights → show unified amenity list (use the richest set)
+  // Different brands → compare amenity lists and split if they differ
   const normalise = (items: string[]) => [...items].sort().join("|");
-  const allSameAmenities = perFlightAmenities.length <= 1 ||
+  const allSameAmenities = sameBrandAllFlights ||
+    perFlightAmenities.length <= 1 ||
     perFlightAmenities.every((items) => normalise(items) === normalise(perFlightAmenities[0]));
 
   if (allSameAmenities) {
-    // Same amenities on all flights — show as flat list
-    const items = perFlightAmenities[0] || [];
+    // Same brand/amenities on all flights — show as flat list
+    // Pick the richest list (most items) since Sabre may return more on one segment
+    const items = [...perFlightAmenities].sort((a, b) => b.length - a.length)[0] || [];
     if (items.length > 0) {
       html += `<p style="margin:2px 0 0 0;line-height:1.7;">${items.map(termBadge).join("")}</p>`;
     }
   } else {
-    // Different amenities per direction — show with direction labels
+    // Different brands per direction — show with direction labels
     const dirLabels = flights.length === 2 ? ["Outbound", "Return"] : flights.map((f: any) => f.route || "");
     flights.forEach((_f: any, i: number) => {
       const items = perFlightAmenities[i];
