@@ -13,6 +13,43 @@ export default function WaterfallVisualizer({ waterfall }: Props) {
   const [stepIdx, setStepIdx] = useState(0);
   const [autoPlay, setAutoPlay] = useState(false);
 
+  // Handle empty snapshots (backend detection without full waterfall data)
+  if (!snapshots || snapshots.length === 0) {
+    return (
+      <div className="space-y-4">
+        <div className="text-center py-8 text-gray-500">
+          <p className="text-sm font-medium">Waterfall visualization not available</p>
+          <p className="text-xs mt-1">
+            Detailed step-by-step waterfall data requires a full analysis.
+            The split PNR recommendation above is based on incremental fare probing.
+          </p>
+        </div>
+        {allocations.length > 0 && (
+          <div className="border border-gray-200 rounded-lg p-4">
+            <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-3">Allocation Summary</h4>
+            {allocations.map((a, i) => (
+              <div key={i} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{a.rbd}</span>
+                  <span className="text-sm text-gray-700">{a.count} pax × {formatCurrency(a.farePerPerson, "USD")}</span>
+                </div>
+                <span className="text-sm font-semibold text-gray-900">{formatCurrency(a.subtotal, "USD")}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between pt-2 mt-2 border-t border-gray-300">
+              <span className="text-sm font-bold text-gray-700">Split Total</span>
+              <span className="text-sm font-bold text-green-700">{formatCurrency(waterfall.totalCost, "USD")}</span>
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-sm text-gray-500">vs Group Rate</span>
+              <span className="text-sm text-gray-500 line-through">{formatCurrency(waterfall.groupCost, "USD")}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const current = snapshots[stepIdx];
   const prev = stepIdx > 0 ? snapshots[stepIdx - 1] : null;
   const totalSteps = snapshots.length;
