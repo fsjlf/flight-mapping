@@ -149,6 +149,7 @@ public class BfmResponseParser : IBfmResponseParser
                     ETicketable = fare.ETicketable,
                     GoverningCarriers = fare.GoverningCarriers,
                     PricingSource = itin.PricingSource,
+                    CoveredSegmentIndices = apiCall.SegmentIndices,
                 });
             }
             catch (Exception ex)

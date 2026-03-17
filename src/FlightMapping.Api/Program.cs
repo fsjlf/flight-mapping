@@ -1,6 +1,8 @@
 using System.Text.Json.Serialization;
+using Anthropic.SDK;
 using DotNetEnv;
 using FlightMapping.Api.Extensions;
+using FlightMapping.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +17,11 @@ builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
     ["Sabre:GroupId"] = Environment.GetEnvironmentVariable("SABRE_GROUP_ID"),
     ["Sabre:Environment"] = Environment.GetEnvironmentVariable("SABRE_ENVIRONMENT"),
 });
+
+// Anthropic (Claude) — API key from env
+var anthropicApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+builder.Services.AddSingleton(new AnthropicClient(anthropicApiKey ?? "missing"));
+builder.Services.AddSingleton<IAiParseService, AiParseService>();
 
 builder.Services.AddCors(options =>
 {

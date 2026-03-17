@@ -21,6 +21,7 @@ public class EnrichedItinerary
     public bool ETicketable { get; set; }
     public string? GoverningCarriers { get; set; }
     public string PricingSource { get; set; } = string.Empty;
+    public List<int> CoveredSegmentIndices { get; set; } = new();
 }
 
 public class FarePolicy

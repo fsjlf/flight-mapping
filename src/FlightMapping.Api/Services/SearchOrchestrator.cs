@@ -104,9 +104,21 @@ public class SearchOrchestrator : ISearchOrchestrator
         var priority = request.Preferences?.Priority ?? SearchPriority.Balanced;
         _scorer.ScoreAll(deduplicated, priority, request);
 
-        // 7. Sort by rank and cap results to keep payload manageable
+        // 7. Cap results while ensuring every strategy type is represented.
+        //    SingleTicket / Hybrid results are far fewer than SeparateOneWays,
+        //    so include all of them and fill the rest with top-ranked OWs.
         const int maxResults = 1500;
-        var ranked = deduplicated.OrderBy(i => i.Rank).Take(maxResults).ToList();
+        var nonOws = deduplicated
+            .Where(i => i.StrategyType != TicketingStrategyType.SeparateOneWays)
+            .OrderBy(i => i.Rank)
+            .ToList();
+        var owSlots = Math.Max(0, maxResults - nonOws.Count);
+        var ows = deduplicated
+            .Where(i => i.StrategyType == TicketingStrategyType.SeparateOneWays)
+            .OrderBy(i => i.Rank)
+            .Take(owSlots)
+            .ToList();
+        var ranked = nonOws.Concat(ows).OrderBy(i => i.Rank).ToList();
 
         if (deduplicated.Count > maxResults)
             _logger.LogInformation("Capped results from {Total} to {Max}", deduplicated.Count, maxResults);

@@ -1132,6 +1132,8 @@ interface Scenario {
     refundable: boolean;
     carrier: string;
     fareTerms: FareTerms | null;
+    cabinClass: string;   // "Economy", "Business", "First", "PremiumEconomy"
+    brandName: string;    // "Standard", "Flex", "Classic", etc.
     flights: {
       flight: string;
       route: string;
@@ -1229,6 +1231,8 @@ function buildScenariosFromState(
           refundable: "refundable" in v ? v.refundable : false,
           carrier: "carrier" in opt ? opt.carrier : "",
           fareTerms: "fareTerms" in v ? (v as Variant).fareTerms : null,
+          cabinClass: "cabin" in v ? ((v as any).cabin || "Economy") : "Economy",
+          brandName: "brandName" in v ? ((v as Variant).brandName || "") : "",
           flights: (segs as EnrichedSegment[]).map((seg) => {
             const depISO = "departureTime" in seg ? seg.departureTime : "";
             const arrISO = "arrivalTime" in seg ? seg.arrivalTime : "";
@@ -1353,6 +1357,100 @@ const CARRIER_FULL_NAMES: Record<string, string> = {
 };
 
 const F = "font-family:Georgia,'Times New Roman',serif;";
+
+const AIRPORT_FULL_NAMES: Record<string, { city: string; name: string }> = {
+  JFK: { city: "New York", name: "John F. Kennedy International" },
+  LGA: { city: "New York", name: "LaGuardia" },
+  EWR: { city: "Newark", name: "Newark Liberty International" },
+  LAX: { city: "Los Angeles", name: "Los Angeles International" },
+  SFO: { city: "San Francisco", name: "San Francisco International" },
+  OAK: { city: "Oakland", name: "Oakland International" },
+  SJC: { city: "San Jose", name: "Mineta San José International" },
+  BUR: { city: "Burbank", name: "Hollywood Burbank" },
+  ORD: { city: "Chicago", name: "O\u2019Hare International" },
+  MDW: { city: "Chicago", name: "Midway International" },
+  ATL: { city: "Atlanta", name: "Hartsfield-Jackson International" },
+  DFW: { city: "Dallas", name: "Dallas/Fort Worth International" },
+  DEN: { city: "Denver", name: "Denver International" },
+  MIA: { city: "Miami", name: "Miami International" },
+  FLL: { city: "Fort Lauderdale", name: "Fort Lauderdale-Hollywood International" },
+  SEA: { city: "Seattle", name: "Seattle-Tacoma International" },
+  BOS: { city: "Boston", name: "Logan International" },
+  IAD: { city: "Washington", name: "Dulles International" },
+  DCA: { city: "Washington", name: "Reagan National" },
+  BWI: { city: "Baltimore", name: "Baltimore/Washington International" },
+  PHX: { city: "Phoenix", name: "Sky Harbor International" },
+  MSP: { city: "Minneapolis", name: "Minneapolis-Saint Paul International" },
+  DTW: { city: "Detroit", name: "Detroit Metropolitan" },
+  CLT: { city: "Charlotte", name: "Charlotte Douglas International" },
+  PHL: { city: "Philadelphia", name: "Philadelphia International" },
+  MCO: { city: "Orlando", name: "Orlando International" },
+  SAN: { city: "San Diego", name: "San Diego International" },
+  IAH: { city: "Houston", name: "George Bush Intercontinental" },
+  HOU: { city: "Houston", name: "William P. Hobby" },
+  TPA: { city: "Tampa", name: "Tampa International" },
+  SNA: { city: "Orange County", name: "John Wayne" },
+  LHR: { city: "London", name: "Heathrow" },
+  LGW: { city: "London", name: "Gatwick" },
+  STN: { city: "London", name: "Stansted" },
+  LCY: { city: "London", name: "City" },
+  CDG: { city: "Paris", name: "Charles de Gaulle" },
+  ORY: { city: "Paris", name: "Orly" },
+  FCO: { city: "Rome", name: "Leonardo da Vinci-Fiumicino" },
+  AMS: { city: "Amsterdam", name: "Schiphol" },
+  FRA: { city: "Frankfurt", name: "Frankfurt am Main" },
+  MUC: { city: "Munich", name: "Franz Josef Strauss" },
+  MAD: { city: "Madrid", name: "Adolfo Suárez Madrid-Barajas" },
+  BCN: { city: "Barcelona", name: "Josep Tarradellas Barcelona-El Prat" },
+  IST: { city: "Istanbul", name: "Istanbul" },
+  DXB: { city: "Dubai", name: "Dubai International" },
+  DOH: { city: "Doha", name: "Hamad International" },
+  NRT: { city: "Tokyo", name: "Narita International" },
+  HND: { city: "Tokyo", name: "Haneda" },
+  HKG: { city: "Hong Kong", name: "Hong Kong International" },
+  SIN: { city: "Singapore", name: "Changi" },
+  BKK: { city: "Bangkok", name: "Suvarnabhumi" },
+  ICN: { city: "Seoul", name: "Incheon International" },
+  SYD: { city: "Sydney", name: "Kingsford Smith" },
+  MEL: { city: "Melbourne", name: "Tullamarine" },
+  YYZ: { city: "Toronto", name: "Pearson International" },
+  YVR: { city: "Vancouver", name: "Vancouver International" },
+  MEX: { city: "Mexico City", name: "Benito Juárez International" },
+  GRU: { city: "São Paulo", name: "Guarulhos International" },
+  EZE: { city: "Buenos Aires", name: "Ministro Pistarini International" },
+  BUD: { city: "Budapest", name: "Ferenc Liszt International" },
+  WAW: { city: "Warsaw", name: "Chopin" },
+  BEG: { city: "Belgrade", name: "Nikola Tesla" },
+  VIE: { city: "Vienna", name: "Schwechat" },
+  ZRH: { city: "Zurich", name: "Kloten" },
+  BRU: { city: "Brussels", name: "Brussels" },
+  CPH: { city: "Copenhagen", name: "Kastrup" },
+  HEL: { city: "Helsinki", name: "Vantaa" },
+  OSL: { city: "Oslo", name: "Gardermoen" },
+  LIS: { city: "Lisbon", name: "Humberto Delgado" },
+  DUB: { city: "Dublin", name: "Dublin" },
+  CAN: { city: "Guangzhou", name: "Baiyun International" },
+  PVG: { city: "Shanghai", name: "Pudong International" },
+  PEK: { city: "Beijing", name: "Capital International" },
+  DEL: { city: "Delhi", name: "Indira Gandhi International" },
+  BOM: { city: "Mumbai", name: "Chhatrapati Shivaji Maharaj International" },
+  JNB: { city: "Johannesburg", name: "O.R. Tambo International" },
+};
+
+function airportDisplay(iata: string): string {
+  const info = AIRPORT_FULL_NAMES[iata];
+  return info ? `${info.city} ${info.name} (${iata})` : iata;
+}
+
+function airportCityIata(iata: string): string {
+  const info = AIRPORT_FULL_NAMES[iata];
+  return info ? `${info.city} (${iata})` : iata;
+}
+
+function cabinDisplayName(cabin: string): string {
+  if (cabin === "PremiumEconomy") return "Premium Economy";
+  return cabin;
+}
 
 function aircraftName(code: string): string {
   return AIRCRAFT_NAMES[code] || code;
@@ -1747,17 +1845,643 @@ function renderRoundtrip(scenarios: Scenario[], model: StrategyModel, copy: Prop
   ].join(""));
 }
 
-function renderOneWay(scenarios: Scenario[], model: StrategyModel, copy: ProposalCopy, fixed: boolean): string {
-  // In ONE_WAY mode, scenarios are cross-products across legs.
-  // We need to reorganize: group by slot (leg), show options per leg.
+// ── One-Way Sub-Scenario Types & Helpers ─────────────────────────────────────
 
-  // If fixed (every leg has exactly 1 selection) — show as resolved itinerary
+interface OneWayFareTier {
+  tierLabel: string;
+  price: number;
+  priceStr: string;
+  refundable: boolean;
+  fareTerms: FareTerms | null;
+}
+
+interface OneWayCabinGroup {
+  cabinClass: string;
+  tiers: OneWayFareTier[];
+}
+
+interface OneWayFlightOption {
+  flightKey: string;
+  letter: string;
+  carrier: string;
+  flights: Scenario["tickets"][0]["flights"];
+  cabins: OneWayCabinGroup[];
+  lowestPrice: number;
+  lowestRefPrice: number | null;
+}
+
+interface OneWayLegData {
+  coverage: string;
+  legIdx: number;
+  direction: string;
+  date: string;
+  options: OneWayFlightOption[];
+  scenario: 1 | 2 | 3 | 4;
+  distinctCabins: string[];
+}
+
+function extractOneWayLegs(scenarios: Scenario[]): OneWayLegData[] {
+  const legMap = new Map<string, Map<string, {
+    carrier: string;
+    flights: Scenario["tickets"][0]["flights"];
+    fares: { cabinClass: string; brandName: string; price: number; priceStr: string; refundable: boolean; fareTerms: FareTerms | null }[];
+  }>>();
+
+  for (const sc of scenarios) {
+    for (const ticket of sc.tickets) {
+      const legKey = ticket.coverage;
+      if (!legMap.has(legKey)) legMap.set(legKey, new Map());
+      const flightMap = legMap.get(legKey)!;
+      const flightKey = ticket.flights.map((f) => f.flight).join("+");
+      if (!flightMap.has(flightKey)) {
+        flightMap.set(flightKey, { carrier: ticket.carrier, flights: ticket.flights, fares: [] });
+      }
+      const group = flightMap.get(flightKey)!;
+      if (!group.fares.some((f) => f.cabinClass === ticket.cabinClass && f.priceStr === ticket.price)) {
+        group.fares.push({
+          cabinClass: ticket.cabinClass,
+          brandName: ticket.brandName,
+          price: parseFloat(ticket.price.replace(/[^0-9.]/g, "")),
+          priceStr: ticket.price,
+          refundable: ticket.refundable,
+          fareTerms: ticket.fareTerms,
+        });
+      }
+    }
+  }
+
+  const cabinOrder = ["Economy", "PremiumEconomy", "Business", "First"];
+  const legs: OneWayLegData[] = [];
+  let legIdx = 0;
+
+  for (const [coverage, flightMap] of legMap) {
+    const options: OneWayFlightOption[] = [];
+
+    for (const [flightKey, data] of flightMap) {
+      const cabinMap = new Map<string, OneWayFareTier[]>();
+      for (const fare of data.fares) {
+        const cab = fare.cabinClass || "Economy";
+        if (!cabinMap.has(cab)) cabinMap.set(cab, []);
+        cabinMap.get(cab)!.push({
+          tierLabel: fare.brandName || (fare.refundable ? "Refundable" : "Standard"),
+          price: fare.price,
+          priceStr: fare.priceStr,
+          refundable: fare.refundable,
+          fareTerms: fare.fareTerms,
+        });
+      }
+
+      const cabins: OneWayCabinGroup[] = [];
+      for (const [cabinClass, tiers] of cabinMap) {
+        tiers.sort((a, b) => a.price - b.price);
+        cabins.push({ cabinClass, tiers });
+      }
+      cabins.sort((a, b) => {
+        const ai = cabinOrder.indexOf(a.cabinClass);
+        const bi = cabinOrder.indexOf(b.cabinClass);
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      });
+
+      const allPrices = data.fares.map((f) => f.price);
+      const refPrices = data.fares.filter((f) => f.refundable).map((f) => f.price);
+
+      options.push({
+        flightKey,
+        letter: "",
+        carrier: data.carrier,
+        flights: data.flights,
+        cabins,
+        lowestPrice: Math.min(...allPrices),
+        lowestRefPrice: refPrices.length > 0 ? Math.min(...refPrices) : null,
+      });
+    }
+
+    options.sort((a, b) => a.lowestPrice - b.lowestPrice);
+
+    const allCabins = new Set<string>();
+    options.forEach((opt) => opt.cabins.forEach((c) => allCabins.add(c.cabinClass)));
+    const distinctCabins = [...allCabins];
+
+    const numFlights = options.length;
+    const allSameCabin = options.every(
+      (opt) => opt.cabins.length === 1 && opt.cabins[0].cabinClass === options[0].cabins[0]?.cabinClass
+    );
+
+    let scenario: 1 | 2 | 3 | 4;
+    if (numFlights === 1 && distinctCabins.length <= 1) scenario = 1;
+    else if (numFlights === 1 && distinctCabins.length > 1) scenario = 2;
+    else if (numFlights > 1 && allSameCabin) scenario = 3;
+    else scenario = 4;
+
+    const totalLegs = legMap.size;
+    const direction = legIdx === 0 ? "Outbound" : legIdx === totalLegs - 1 ? "Return" : "Connecting";
+    const firstFlight = options[0]?.flights[0];
+    const date = firstFlight ? fullDateFmt(firstFlight.departISO) : "";
+
+    legs.push({ coverage, legIdx, direction, date, options, scenario, distinctCabins });
+    legIdx++;
+  }
+
+  return legs;
+}
+
+// ── One-Way Identity Bar (v6 style — dark bar with carrier, times, route) ──
+
+function htmlOneWayIdentityBar(opt: OneWayFlightOption): string {
+  const carrier = carrierFullName(opt.carrier);
+  const flightNums = opt.flights.map((f) => f.flight).join(" &rarr; ");
+  const numStops = opt.flights.length - 1;
+  const stopsText = numStops === 0 ? "Nonstop" : `${numStops} Stop${numStops > 1 ? "s" : ""}`;
+
+  const firstFlight = opt.flights[0];
+  const lastFlight = opt.flights[opt.flights.length - 1];
+  const departTime = timeFmt12(firstFlight.departISO);
+  const arriveTime = timeFmt12(lastFlight.arriveISO);
+  const plusDay = dayDiff(firstFlight.departISO, lastFlight.arriveISO);
+
+  const totalMs = new Date(lastFlight.arriveISO).getTime() - new Date(firstFlight.departISO).getTime();
+  const totalHrs = Math.floor(totalMs / (1000 * 60 * 60));
+  const totalMins = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60));
+  const totalDuration = `${totalHrs}h ${totalMins}m`;
+
+  const departAirport = firstFlight.route.split(" \u2192 ")[0]?.trim() || "";
+  const arriveAirport = lastFlight.route.split(" \u2192 ")[1]?.trim() || "";
+
+  const acNames = [...new Set(opt.flights.map((f) => aircraftName(f.aircraft)).filter(Boolean))];
+  const acText = acNames.length === 1
+    ? acNames[0] + (opt.flights.length > 1 ? " throughout" : "")
+    : acNames.join(" / ");
+
+  return `<tr><td style="padding:0 48px 0 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#2c2c2c;">
+<tr><td style="padding:14px 20px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr><td>
+<p style="margin:0 0 3px 0;${F}font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#8b7355;font-weight:bold;">Option ${opt.letter} &nbsp;&middot;&nbsp; ${stopsText}</p>
+<p style="margin:0 0 2px 0;${F}font-size:18px;font-weight:bold;color:#ffffff;">${carrier}</p>
+<p style="margin:0;${F}font-size:12px;color:#a8a8a8;">${flightNums}${acText ? ` &nbsp;&middot;&nbsp; ${acText}` : ""}</p>
+</td>
+<td style="text-align:right;vertical-align:top;">
+<p style="margin:0 0 3px 0;${F}font-size:22px;font-weight:bold;color:#ffffff;">${departTime} &rarr; ${arriveTime}${plusDay ? `<span style="font-size:12px;color:#b45309;font-weight:bold;">${plusDay}</span>` : ""}</p>
+<p style="margin:0 0 3px 0;${F}font-size:12px;color:#a8a8a8;">${totalDuration} total &nbsp;&middot;&nbsp; ${stopsText}</p>
+<p style="margin:0;${F}font-size:12px;font-weight:bold;color:#8b7355;">Departs ${airportCityIata(departAirport)} &nbsp;&middot;&nbsp; Arrives ${airportCityIata(arriveAirport)}</p>
+</td></tr></table></td></tr></table></td></tr>`;
+}
+
+// ── One-Way Routing Zone (v6 style — timeline dots with segments & layovers) ──
+
+function htmlOneWayRoutingZone(opt: OneWayFlightOption): string {
+  let html = `<tr><td style="padding:0 48px 0 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e0dbd4;border-top:0;border-bottom:0;background-color:#fafaf8;">`;
+
+  opt.flights.forEach((f, fi) => {
+    const isFirst = fi === 0;
+    const isLast = fi === opt.flights.length - 1;
+    const departAirport = f.route.split(" \u2192 ")[0]?.trim() || "";
+    const arriveAirport = f.route.split(" \u2192 ")[1]?.trim() || "";
+    const acName = aircraftName(f.aircraft);
+
+    // Segment block with timeline dots
+    html += `<tr><td style="padding:${isFirst ? "16" : "14"}px 20px ${isLast ? "16" : "14"}px 20px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr><td style="vertical-align:top;width:16px;padding-top:4px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0">
+<tr><td style="width:8px;height:8px;border-radius:50%;background-color:#8b7355;">&nbsp;</td></tr>
+<tr><td align="center"><div style="width:1px;height:28px;background-color:#d0c9be;margin:2px auto;">&nbsp;</div></td></tr>
+<tr><td style="width:8px;height:8px;border-radius:50%;background-color:#8b7355;">&nbsp;</td></tr>
+</table></td>
+<td style="padding-left:14px;vertical-align:top;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr><td>
+<p style="margin:0 0 1px 0;${F}font-size:15px;font-weight:bold;color:#2c2c2c;">${timeFmt12(f.departISO)} &nbsp;&middot;&nbsp; ${airportDisplay(departAirport)}</p>
+<p style="margin:0 0 10px 0;${F}font-size:11px;color:#888888;">Travel time: ${f.duration} &nbsp;&middot;&nbsp; ${f.flight}${acName ? ` &nbsp;&middot;&nbsp; ${acName}` : ""}</p>
+<p style="margin:0;${F}font-size:15px;font-weight:bold;color:#2c2c2c;">${timeFmt12(f.arriveISO)} &nbsp;&middot;&nbsp; ${airportDisplay(arriveAirport)}</p>
+</td></tr></table>
+</td></tr></table></td></tr>`;
+
+    // Layover bar between segments
+    if (!isLast) {
+      const nextFlight = opt.flights[fi + 1];
+      const layoverMs = new Date(nextFlight.departISO).getTime() - new Date(f.arriveISO).getTime();
+      const layoverMins = Math.floor(layoverMs / (1000 * 60));
+      const layoverHrs = Math.floor(layoverMins / 60);
+      const layoverRemMins = layoverMins % 60;
+      const layoverText = layoverHrs > 0 ? `${layoverHrs}h ${layoverRemMins}m` : `${layoverMins} min`;
+      const layoverCity = airportDisplay(arriveAirport);
+
+      // Tight connection check (domestic ≤60min, international ≤90min)
+      const isDomestic = departAirport.length === 3 && arriveAirport.length === 3; // simplified
+      const tightThreshold = isDomestic ? 60 : 90;
+      const isTight = layoverMins <= tightThreshold;
+
+      html += `<tr><td style="padding:0 20px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px dashed #d0c9be;border-bottom:1px dashed #d0c9be;">
+<tr><td style="padding:10px 0${isTight ? " 6px 0" : ""};">
+<p style="margin:0;${F}font-size:12px;color:#555555;"><strong style="color:#2c2c2c;">${layoverText} layover</strong> &nbsp;&middot;&nbsp; ${layoverCity}</p>
+</td></tr>`;
+
+      if (isTight) {
+        html += `<tr><td style="padding:0 0 10px 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fff9f0;border:1px solid #e8dcc8;">
+<tr><td style="padding:8px 12px;">
+<p style="margin:0;${F}font-size:11px;color:#b45309;line-height:1.6;"><strong>Tight connection.</strong> ${layoverText} is ${layoverMins <= tightThreshold ? "at" : "below"} the minimum connection time at ${airportDisplay(arriveAirport)}. If the inbound flight is delayed, onward rebooking may be needed. ${carrierFullName(opt.carrier)} will rebook automatically if the connection is missed, provided both flights are on the same ticket.</p>
+</td></tr></table></td></tr>`;
+      }
+
+      html += `</table></td></tr>`;
+    }
+  });
+
+  html += `</table></td></tr>`;
+  return html;
+}
+
+// ── One-Way Cabin Columns (v6 style — side-by-side cabin columns with fare tiers) ──
+
+function htmlOneWayCabinColumns(opt: OneWayFlightOption, bottomPadding: string = "32px"): string {
+  const numCabins = opt.cabins.length;
+  if (numCabins === 0) return "";
+  const colWidth = Math.floor(100 / numCabins);
+
+  // Column headers
+  let headerCells = "";
+  opt.cabins.forEach((cab, ci) => {
+    const isLast = ci === numCabins - 1;
+    headerCells += `<td width="${colWidth}%" style="padding:11px 16px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#888888;${!isLast ? "border-right:1px solid #e0dbd4;" : ""}border-bottom:2px solid #e0dbd4;background-color:#f5f4f1;">${cabinDisplayName(cab.cabinClass)}</td>`;
+  });
+
+  // Fare tier cells
+  let tierCells = "";
+  opt.cabins.forEach((cab, ci) => {
+    const isLast = ci === numCabins - 1;
+    let cellHtml = "";
+
+    cab.tiers.forEach((tier, ti) => {
+      const isFirstTier = ti === 0;
+      const isRef = tier.refundable;
+      const tierColor = isRef ? "#2e7d32" : "#888888";
+      const priceColor = isRef ? "#2e7d32" : "#2c2c2c";
+
+      if (!isFirstTier) {
+        cellHtml += `<p style="margin:0 0 2px 0;${F}font-size:11px;color:${tierColor};text-transform:uppercase;letter-spacing:0.5px;${isRef ? "font-weight:bold;" : ""}border-top:1px solid #e8e4de;padding-top:12px;">${tier.tierLabel}</p>`;
+      } else {
+        cellHtml += `<p style="margin:0 0 2px 0;${F}font-size:11px;color:${tierColor};text-transform:uppercase;letter-spacing:0.5px;${isRef ? "font-weight:bold;" : ""}">${tier.tierLabel}</p>`;
+      }
+
+      cellHtml += `<p style="margin:0 0 8px 0;${F}font-size:20px;font-weight:bold;color:${priceColor};">${tier.priceStr}</p>`;
+
+      // Fare rules
+      if (tier.fareTerms) {
+        const ft = tier.fareTerms;
+        if (ft.baggage) {
+          const bagColor = /no checked|carry-on only/i.test(ft.baggage) ? "#c0392b" : "#555555";
+          cellHtml += `<p style="margin:0 0 2px 0;${F}font-size:11px;color:${bagColor};">${ft.baggage}</p>`;
+        }
+        if (ft.changePolicy === "none") {
+          cellHtml += `<p style="margin:0 0 2px 0;${F}font-size:11px;color:#c0392b;">Changes not permitted</p>`;
+        } else if (ft.changeSummary && ft.changeSummary !== "No Changes") {
+          const chgColor = /free/i.test(ft.changeSummary) ? "#2e7d32" : "#555555";
+          cellHtml += `<p style="margin:0 0 2px 0;${F}font-size:11px;color:${chgColor};">${ft.changeSummary}</p>`;
+        }
+        if (ft.seatType) {
+          cellHtml += `<p style="margin:0 0 2px 0;${F}font-size:11px;color:#555555;">${ft.seatType}</p>`;
+        }
+        if (isRef) {
+          cellHtml += `<p style="margin:0 0 ${ti < cab.tiers.length - 1 ? "12" : "0"}px 0;${F}font-size:11px;color:#2e7d32;">Fully refundable</p>`;
+        }
+      } else {
+        cellHtml += `<p style="margin:0;${F}font-size:11px;color:${isRef ? "#2e7d32" : "#555555"};">${isRef ? "Refundable" : "Non-refundable"}</p>`;
+      }
+    });
+
+    const bgColor = ci > 0 ? "background-color:#fdfcfb;" : "";
+    tierCells += `<td style="padding:16px;${!isLast ? "border-right:1px solid #e0dbd4;" : ""}vertical-align:top;${bgColor}">${cellHtml}</td>`;
+  });
+
+  return `<tr><td style="padding:0 48px ${bottomPadding} 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e0dbd4;border-top:0;border-collapse:collapse;">
+<tr>${headerCells}</tr>
+<tr style="vertical-align:top;">${tierCells}</tr>
+</table></td></tr>`;
+}
+
+// ── One-Way Compact Table (v3 style — Scenario 3: multiple flights, same cabin) ──
+
+function htmlOneWayCompactTable(leg: OneWayLegData): string {
+  const hasRef = leg.options.some((opt) => opt.lowestRefPrice !== null);
+  const hasNonRef = leg.options.some((opt) => opt.cabins.flatMap((c) => c.tiers).some((t) => !t.refundable));
+  const showTwoPriceCols = hasRef && hasNonRef;
+
+  let html = `<tr><td style="padding:0 48px 36px 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e0dbd4;border-collapse:collapse;">
+<tr style="background-color:#2c2c2c;">
+<td width="24" style="padding:10px 0 10px 14px;border-right:1px solid #3a3a3a;">&nbsp;</td>
+<td style="padding:10px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;border-right:1px solid #3a3a3a;">Flight &amp; Arrives</td>
+<td style="padding:10px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;border-right:1px solid #3a3a3a;">Duration &amp; Aircraft</td>`;
+
+  if (showTwoPriceCols) {
+    html += `<td colspan="2" style="padding:0;border-right:0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr><td colspan="2" style="padding:7px 14px 4px 14px;${F}font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:#8b7355;text-align:center;border-bottom:1px solid #3a3a3a;">Per Person</td></tr>
+<tr><td width="50%" style="padding:4px 14px 8px 14px;${F}font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#a8a8a8;border-right:1px solid #3a3a3a;">Non-refundable</td>
+<td style="padding:4px 14px 8px 14px;${F}font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#2e7d32;">Refundable</td></tr>
+</table></td>`;
+  } else {
+    html += `<td style="padding:10px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;text-align:right;">Per Person</td>`;
+  }
+
+  html += `</tr>`;
+
+  leg.options.forEach((opt, oi) => {
+    const bg = oi % 2 === 0 ? "#ffffff" : "#fafaf8";
+    const isLast = oi === leg.options.length - 1;
+    const borderBottom = isLast ? "" : "border-bottom:1px solid #e0dbd4;";
+
+    const firstFlight = opt.flights[0];
+    const lastFlight = opt.flights[opt.flights.length - 1];
+    const departAirport = firstFlight.route.split(" \u2192 ")[0]?.trim() || "";
+    const arriveAirport = lastFlight.route.split(" \u2192 ")[1]?.trim() || "";
+
+    const numStops = opt.flights.length - 1;
+    const stopsText = numStops === 0 ? "Nonstop" : `${numStops} stop${numStops > 1 ? "s" : ""}`;
+
+    const departTime = timeFmt12(firstFlight.departISO);
+    const arriveTime = timeFmt12(lastFlight.arriveISO);
+    const plusDay = dayDiff(firstFlight.departISO, lastFlight.arriveISO);
+
+    const totalMs = new Date(lastFlight.arriveISO).getTime() - new Date(firstFlight.departISO).getTime();
+    const totalHrs = Math.floor(totalMs / (1000 * 60 * 60));
+    const totalMins = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60));
+    const totalDuration = `${totalHrs}h ${totalMins}m`;
+
+    const carrier = carrierFullName(opt.carrier);
+    const flightNums = opt.flights.map((f) => f.flight).join(" + ");
+    const acNames = [...new Set(opt.flights.map((f) => aircraftName(f.aircraft)).filter(Boolean))];
+    const acText = acNames.join(" / ");
+
+    const cabinName = opt.cabins[0] ? cabinDisplayName(opt.cabins[0].cabinClass) : "";
+    const seatInfo = opt.cabins[0]?.tiers[0]?.fareTerms?.seatType;
+    const bagInfo = opt.cabins[0]?.tiers[0]?.fareTerms?.baggage;
+
+    const nonRefTier = opt.cabins.flatMap((c) => c.tiers).find((t) => !t.refundable);
+    const refTier = opt.cabins.flatMap((c) => c.tiers).find((t) => t.refundable);
+
+    html += `<tr style="background-color:${bg};">
+<td style="padding:18px 0 18px 14px;border-right:1px solid #e0dbd4;${borderBottom}vertical-align:middle;">
+<span style="${F}font-size:12px;font-weight:bold;color:#8b7355;">${opt.letter}</span></td>
+<td style="padding:18px 14px;border-right:1px solid #e0dbd4;${borderBottom}vertical-align:top;">
+<p style="margin:0 0 2px 0;${F}font-size:13px;font-weight:bold;color:#2c2c2c;">${carrier} &middot; ${flightNums}</p>
+<p style="margin:0 0 8px 0;${F}font-size:12px;color:#888888;">${cabinName}${seatInfo ? ` &middot; ${seatInfo}` : ""}</p>
+<p style="margin:0 0 1px 0;${F}font-size:16px;font-weight:bold;color:#2c2c2c;">${departTime} &rarr; ${arriveTime}${plusDay ? `<span style="font-size:10px;color:#b45309;font-weight:bold;">${plusDay}</span>` : ""}</p>
+<p style="margin:0;${F}font-size:11px;font-weight:bold;color:#8b7355;">Arrives ${airportCityIata(arriveAirport)}</p>
+</td>
+<td style="padding:18px 14px;border-right:1px solid #e0dbd4;${borderBottom}vertical-align:top;">
+<p style="margin:0 0 2px 0;${F}font-size:12px;color:#555555;">${totalDuration}</p>
+<p style="margin:0 0 2px 0;${F}font-size:11px;color:#888888;">${stopsText}${acText ? ` &middot; ${acText}` : ""}</p>
+${bagInfo ? `<p style="margin:0;${F}font-size:11px;color:#888888;">${bagInfo}</p>` : ""}
+</td>`;
+
+    if (showTwoPriceCols) {
+      html += `<td style="padding:18px 14px;border-right:1px solid #e0dbd4;${borderBottom}vertical-align:top;text-align:center;">
+${nonRefTier ? `<p style="margin:0 0 3px 0;${F}font-size:18px;font-weight:bold;color:#2c2c2c;">${nonRefTier.priceStr}</p><p style="margin:0;${F}font-size:10px;color:#888888;">${nonRefTier.tierLabel}</p>` : `<p style="margin:0;${F}font-size:12px;color:#888888;">&mdash;</p>`}
+</td>
+<td style="padding:18px 14px;${borderBottom}vertical-align:top;text-align:center;">
+${refTier ? `<p style="margin:0 0 3px 0;${F}font-size:18px;font-weight:bold;color:#2e7d32;">${refTier.priceStr}</p><p style="margin:0;${F}font-size:10px;color:#888888;">${refTier.tierLabel}</p>` : `<p style="margin:0;${F}font-size:12px;color:#888888;">&mdash;</p>`}
+</td>`;
+    } else {
+      const displayTier = nonRefTier || refTier;
+      html += `<td style="padding:18px 14px;${borderBottom}vertical-align:top;text-align:center;">
+${displayTier ? `<p style="margin:0 0 3px 0;${F}font-size:18px;font-weight:bold;color:${displayTier.refundable ? "#2e7d32" : "#2c2c2c"};">${displayTier.priceStr}</p><p style="margin:0;${F}font-size:10px;color:#888888;">${displayTier.tierLabel}</p>` : ""}
+</td>`;
+    }
+
+    html += `</tr>`;
+  });
+
+  html += `</table></td></tr>`;
+  return html;
+}
+
+// ── One-Way Pricing Combinations Table (v3 style — A+D, B+D format) ──
+
+function htmlOneWayPricingCombinations(legs: OneWayLegData[]): string {
+  if (legs.length < 2) return "";
+
+  // For 3+ legs, show simplified pricing ranges
+  if (legs.length > 2) {
+    const legRanges = legs.map((leg) => {
+      const prices = leg.options.map((o) => o.lowestPrice);
+      return `${leg.coverage} from ${pfmt(Math.min(...prices))}`;
+    });
+    return `<tr><td style="padding:0 48px 28px 48px;border-top:2px solid #eeebe5;">
+<p style="margin:28px 0 14px 0;${F}font-size:10px;letter-spacing:2.5px;text-transform:uppercase;color:#8b7355;font-weight:bold;">Pricing Summary</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fafaf8;border:1px solid #e8e4de;">
+<tr><td style="padding:14px 20px;">
+<p style="margin:0 0 6px 0;${F}font-size:13px;color:#555555;line-height:1.7;">Your total will depend on the combination you choose.</p>
+<p style="margin:0;${F}font-size:12px;color:#888888;">${legRanges.join(" &nbsp;&middot;&nbsp; ")}</p>
+</td></tr></table></td></tr>`;
+  }
+
+  // 2-leg case: detailed combination table
+  const leg1 = legs[0];
+  const leg2 = legs[1];
+
+  const hasNonRef = leg1.options.some((o) => o.cabins.flatMap((c) => c.tiers).some((t) => !t.refundable)) &&
+    leg2.options.some((o) => o.cabins.flatMap((c) => c.tiers).some((t) => !t.refundable));
+  const hasRef = leg1.options.some((o) => o.lowestRefPrice !== null) &&
+    leg2.options.some((o) => o.lowestRefPrice !== null);
+  const showBothCols = hasNonRef && hasRef;
+
+  interface ComboRow { label: string; desc: string; nonRef: number | null; ref: number | null; }
+  const combos: ComboRow[] = [];
+
+  for (const opt1 of leg1.options) {
+    for (const opt2 of leg2.options) {
+      const nrTiers1 = opt1.cabins.flatMap((c) => c.tiers).filter((t) => !t.refundable);
+      const nrTiers2 = opt2.cabins.flatMap((c) => c.tiers).filter((t) => !t.refundable);
+      const rTiers1 = opt1.cabins.flatMap((c) => c.tiers).filter((t) => t.refundable);
+      const rTiers2 = opt2.cabins.flatMap((c) => c.tiers).filter((t) => t.refundable);
+
+      const nonRefTotal = nrTiers1.length > 0 && nrTiers2.length > 0
+        ? Math.min(...nrTiers1.map((t) => t.price)) + Math.min(...nrTiers2.map((t) => t.price))
+        : null;
+      const refTotal = rTiers1.length > 0 && rTiers2.length > 0
+        ? Math.min(...rTiers1.map((t) => t.price)) + Math.min(...rTiers2.map((t) => t.price))
+        : null;
+
+      const carrier1 = carrierFullName(opt1.carrier);
+      const carrier2 = carrierFullName(opt2.carrier);
+      const arrive1 = opt1.flights[opt1.flights.length - 1].route.split(" \u2192 ")[1]?.trim() || "";
+      const depart2 = opt2.flights[0].route.split(" \u2192 ")[0]?.trim() || "";
+
+      let desc: string;
+      if (arrive1 === depart2 && opt1.carrier === opt2.carrier) {
+        desc = `${carrier1} ${airportCityIata(arrive1)} &rarr; ${airportCityIata(arrive1)} &nbsp;(same airport both ways)`;
+      } else if (arrive1 === depart2) {
+        desc = `${carrier1} / ${carrier2} via ${airportCityIata(arrive1)} &nbsp;(same airport)`;
+      } else {
+        desc = `${carrier1} to ${airportCityIata(arrive1)} &middot; ${carrier2} from ${airportCityIata(depart2)}`;
+      }
+
+      combos.push({ label: `${opt1.letter} + ${opt2.letter}`, desc, nonRef: nonRefTotal, ref: refTotal });
+    }
+  }
+
+  combos.sort((a, b) => (a.nonRef || a.ref || 0) - (b.nonRef || b.ref || 0));
+  const displayCombos = combos.length > 8 ? combos.slice(0, 8) : combos;
+
+  let html = `<tr><td style="padding:0 48px 0 48px;border-top:2px solid #eeebe5;">
+<p style="margin:28px 0 14px 0;${F}font-size:10px;letter-spacing:2.5px;text-transform:uppercase;color:#8b7355;font-weight:bold;">Pricing Summary</p>
+</td></tr>
+<tr><td style="padding:0 48px 28px 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e0dbd4;border-collapse:collapse;">
+<tr style="background-color:#2c2c2c;">
+<td style="padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;border-right:1px solid #3a3a3a;">Combination</td>`;
+
+  if (showBothCols) {
+    html += `<td style="padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#a8a8a8;text-align:right;border-right:1px solid #3a3a3a;">Non-refundable</td>
+<td style="padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#2e7d32;text-align:right;">Refundable</td>`;
+  } else {
+    html += `<td style="padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;text-align:right;">Per Person</td>`;
+  }
+
+  html += `</tr>`;
+
+  displayCombos.forEach((combo, ci) => {
+    const bg = ci % 2 === 0 ? "#fefefe" : "#fafaf8";
+    const isLast = ci === displayCombos.length - 1;
+    const bb = isLast ? "" : "border-bottom:1px solid #e0dbd4;";
+
+    html += `<tr style="background-color:${bg};">
+<td style="padding:12px 14px;${F}font-size:13px;color:#2c2c2c;${showBothCols ? "border-right:1px solid #e0dbd4;" : ""}${bb}">
+<span style="font-weight:bold;color:#8b7355;">${combo.label}</span>
+<span style="color:#888888;font-size:11px;"> &nbsp;${combo.desc}</span></td>`;
+
+    if (showBothCols) {
+      html += `<td style="padding:12px 14px;${F}font-size:14px;font-weight:bold;color:#2c2c2c;text-align:right;border-right:1px solid #e0dbd4;${bb}">${combo.nonRef ? pfmt(combo.nonRef) : "&mdash;"}</td>
+<td style="padding:12px 14px;${F}font-size:14px;font-weight:bold;color:#2e7d32;text-align:right;${bb}">${combo.ref ? pfmt(combo.ref) : "&mdash;"}</td>`;
+    } else {
+      const price = combo.nonRef || combo.ref;
+      html += `<td style="padding:12px 14px;${F}font-size:14px;font-weight:bold;color:#2c2c2c;text-align:right;${bb}">${price ? pfmt(price) : "&mdash;"}</td>`;
+    }
+
+    html += `</tr>`;
+  });
+
+  // Footer note
+  html += `<tr style="background-color:#fef9f4;">
+<td colspan="${showBothCols ? 3 : 2}" style="padding:12px 14px;">
+<p style="margin:0;${F}font-size:11px;color:#8b7355;font-style:italic;">${combos.length > displayCombos.length ? `Showing ${displayCombos.length} of ${combos.length} combinations. ` : "All combinations available &mdash; "}Reply with any outbound + return letter and I&rsquo;ll confirm pricing and book.</p>
+</td></tr>`;
+
+  html += `</table></td></tr>`;
+  return html;
+}
+
+// ── One-Way Quick Reference Table (for 3+ options across legs) ──
+
+function htmlOneWayQuickReference(legs: OneWayLegData[]): string {
+  const allOptions = legs.flatMap((leg) => leg.options);
+  if (allOptions.length < 3) return "";
+
+  let html = `<tr><td style="padding:24px 48px 6px 48px;">
+<p style="margin:0 0 12px 0;${F}font-size:10px;letter-spacing:2.5px;text-transform:uppercase;color:#8b7355;font-weight:bold;">All Options at a Glance</p>
+</td></tr>
+<tr><td style="padding:0 48px 24px 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e0dbd4;border-collapse:collapse;">
+<tr style="background-color:#2c2c2c;">
+<td style="padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;width:30px;"></td>
+<td style="padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;">Flight</td>
+<td style="padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;">Route</td>
+<td style="padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;">Time</td>
+<td style="padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;text-align:right;">From (non-ref)</td>
+</tr>`;
+
+  let rowIdx = 0;
+  for (const leg of legs) {
+    for (const opt of leg.options) {
+      const firstFlight = opt.flights[0];
+      const lastFlight = opt.flights[opt.flights.length - 1];
+      const numStops = opt.flights.length - 1;
+      const stopsText = numStops === 0 ? "Nonstop" : `${numStops} stop`;
+      const departAirport = firstFlight.route.split(" \u2192 ")[0]?.trim() || "";
+      const arriveAirport = lastFlight.route.split(" \u2192 ")[1]?.trim() || "";
+
+      const totalMs = new Date(lastFlight.arriveISO).getTime() - new Date(firstFlight.departISO).getTime();
+      const totalHrs = Math.floor(totalMs / (1000 * 60 * 60));
+      const totalMins = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60));
+      const totalDuration = `${totalHrs}h ${totalMins}m`;
+
+      const carrier = carrierFullName(opt.carrier);
+      const nonRefTier = opt.cabins.flatMap((c) => c.tiers).find((t) => !t.refundable);
+      const cheapestTier = opt.cabins.flatMap((c) => c.tiers).sort((a, b) => a.price - b.price)[0];
+      const displayTier = nonRefTier || cheapestTier;
+      const cabinName = opt.cabins[0] ? cabinDisplayName(opt.cabins[0].cabinClass) : "";
+
+      // Check for tight connections
+      let hasTight = false;
+      for (let fi = 0; fi < opt.flights.length - 1; fi++) {
+        const layoverMs = new Date(opt.flights[fi + 1].departISO).getTime() - new Date(opt.flights[fi].arriveISO).getTime();
+        if (layoverMs / (1000 * 60) <= 60) hasTight = true;
+      }
+
+      const bg = rowIdx % 2 === 0 ? "#ffffff" : "#fafaf8";
+
+      html += `<tr style="background-color:${bg};">
+<td style="padding:9px 14px;${F}font-size:12px;font-weight:bold;color:#8b7355;border-bottom:1px solid #e0dbd4;">${opt.letter}</td>
+<td style="padding:9px 14px;${F}border-bottom:1px solid #e0dbd4;">
+<span style="font-size:12px;font-weight:bold;color:#2c2c2c;">${carrier}</span><br/>
+<span style="font-size:11px;color:#888888;">${stopsText} &middot; ${totalDuration}</span></td>
+<td style="padding:9px 14px;${F}font-size:12px;color:#2c2c2c;border-bottom:1px solid #e0dbd4;">
+${departAirport}&rarr;${arriveAirport}${hasTight ? ` <span style="color:#b45309;">&#9888;</span>` : ""}</td>
+<td style="padding:9px 14px;${F}font-size:12px;color:#2c2c2c;border-bottom:1px solid #e0dbd4;">${timeFmt12(firstFlight.departISO)}</td>
+<td style="padding:9px 14px;${F}font-size:13px;font-weight:bold;color:#2c2c2c;text-align:right;border-bottom:1px solid #e0dbd4;">
+${displayTier ? displayTier.priceStr : "&mdash;"}<br/>
+<span style="font-size:10px;font-weight:normal;color:#888888;">${cabinName}</span></td></tr>`;
+
+      rowIdx++;
+    }
+  }
+
+  html += `</table></td></tr>`;
+  return html;
+}
+
+// ── One-Way How to Reply Block ──
+
+function htmlOneWayHowToReply(legs: OneWayLegData[]): string {
+  const hasMultiCabin = legs.some((l) => l.scenario === 2 || l.scenario === 4);
+  const hasMultiLegs = legs.length > 1;
+
+  let replyText: string;
+  if (hasMultiLegs && hasMultiCabin) {
+    replyText = "Reply with the option letters, cabin, and fare tier for each leg &mdash; for example, <strong>&ldquo;A (Business, Standard) + D (Economy, Flex)&rdquo;</strong>";
+  } else if (hasMultiLegs) {
+    replyText = "Reply with the option letters for each leg &mdash; for example, <strong>&ldquo;A + D&rdquo;</strong> for the cheapest combination, or <strong>&ldquo;B + D, refundable&rdquo;</strong> if you&rsquo;d like flexibility.";
+  } else if (hasMultiCabin) {
+    replyText = "Reply with the option letter, cabin, and fare tier &mdash; for example, <strong>&ldquo;B, First Class, Standard&rdquo;</strong> or <strong>&ldquo;C, Economy, Flex.&rdquo;</strong>";
+  } else {
+    replyText = "Reply with the option letter &mdash; for example, <strong>&ldquo;Option B, refundable&rdquo;</strong> or <strong>&ldquo;A, non-refundable.&rdquo;</strong>";
+  }
+
+  return `<tr><td style="padding:0 48px 28px 48px;${!hasMultiLegs ? "border-top:2px solid #eeebe5;" : ""}">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:${!hasMultiLegs ? "28" : "0"}px;background-color:#fafaf8;border-left:3px solid #e0dbd4;">
+<tr><td style="padding:16px 18px;">
+<p style="margin:0 0 6px 0;${F}font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#8b7355;font-weight:bold;">How to Reply</p>
+<p style="margin:0;${F}font-size:13px;color:#555555;line-height:1.8;">${replyText}</p>
+</td></tr></table></td></tr>`;
+}
+
+// ── Main One-Way Renderer ────────────────────────────────────────────────────
+
+function renderOneWay(scenarios: Scenario[], model: StrategyModel, copy: ProposalCopy, fixed: boolean): string {
+  // Fixed case (single selection per leg) — show as resolved itinerary
   if (fixed && scenarios.length === 1) {
     const sc = scenarios[0];
     const bodyNote = "Your itinerary has been assembled below. Each leg is on its own ticket for maximum flexibility.";
     let sections = "";
 
-    sc.tickets.forEach((ticket, ti) => {
+    sc.tickets.forEach((ticket) => {
       if (sc.tickets.length > 1) sections += htmlTicketHeader(ticket);
       ticket.flights.forEach((f) => { sections += htmlFlightCard(f, ticket.carrier); });
       sections += htmlFareTable(ticket);
@@ -1780,70 +2504,69 @@ function renderOneWay(scenarios: Scenario[], model: StrategyModel, copy: Proposa
     ].join(""));
   }
 
-  // Multiple choices: group scenarios by leg to show per-leg options
-  // Since scenarios are Cartesian products, extract unique per-leg options
-  const legMap = new Map<string, { label: string; coverage: string; options: Map<string, { ticket: Scenario["tickets"][0]; scenarioIds: string[] }> }>();
+  // Extract per-leg data from Cartesian product scenarios
+  const legs = extractOneWayLegs(scenarios);
 
-  for (const sc of scenarios) {
-    for (const ticket of sc.tickets) {
-      const key = ticket.coverage; // e.g. "JFK → LAX"
-      if (!legMap.has(key)) {
-        legMap.set(key, { label: ticket.ticketLabel, coverage: ticket.coverage, options: new Map() });
-      }
-      // Dedupe by flight+fare combo
-      const optKey = ticket.flights.map((f) => f.flight).join("+") + "_" + ticket.price;
-      if (!legMap.get(key)!.options.has(optKey)) {
-        legMap.get(key)!.options.set(optKey, { ticket, scenarioIds: [sc.id] });
+  // Assign letters sequentially across all legs (A, B, C for leg 1; D, E, F for leg 2; etc.)
+  let letterIdx = 0;
+  for (const leg of legs) {
+    for (const opt of leg.options) {
+      opt.letter = String.fromCharCode(65 + letterIdx++);
+    }
+  }
+
+  const bodyNote = legs.length > 1
+    ? "Here are your options for each leg. Pick one flight per leg &mdash; I&rsquo;ll combine them into your final booking."
+    : `Here ${legs[0].options.length === 1 ? "is the option" : `are ${legs[0].options.length} options`} for this flight. Each is shown with its routing and fare tiers so you can compare at a glance.`;
+
+  let sections = "";
+
+  for (const leg of legs) {
+    // Leg divider
+    if (leg.legIdx > 0) {
+      sections += `<tr><td style="padding:0 48px;border-top:2px solid #eeebe5;"></td></tr>`;
+    }
+
+    // Leg header
+    const directionLabel = legs.length === 1
+      ? `Outbound &middot; ${leg.date}`
+      : `Leg ${leg.legIdx + 1} of ${legs.length} &middot; ${leg.direction} &middot; ${leg.date}`;
+
+    sections += `<tr><td style="padding:${leg.legIdx > 0 ? "28" : "0"}px 48px 24px 48px;">
+<p style="margin:0 0 3px 0;${F}font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#8b7355;font-weight:bold;">${directionLabel}</p>
+<p style="margin:0;${F}font-size:22px;font-weight:bold;color:#2c2c2c;">${leg.coverage}</p>
+</td></tr>`;
+
+    // Render based on sub-scenario
+    if (leg.scenario === 3) {
+      // Scenario 3: Compact table (v3 style) — multiple flights, same cabin
+      sections += htmlOneWayCompactTable(leg);
+    } else {
+      // Scenarios 1, 2, 4: Block layout (v6 style) — identity bar + routing zone + cabin columns
+      for (const opt of leg.options) {
+        sections += htmlOneWayIdentityBar(opt);
+        sections += htmlOneWayRoutingZone(opt);
+        const isLastOpt = leg.options.indexOf(opt) === leg.options.length - 1;
+        sections += htmlOneWayCabinColumns(opt, isLastOpt ? "36px" : "32px");
       }
     }
   }
 
-  const bodyNote = "Here are your options for each leg of the trip. You&rsquo;ll choose one flight per segment &mdash; we&rsquo;ll then combine them into your final booking.";
-  let sections = "";
-  let legIdx = 0;
-  const legs = Array.from(legMap.values());
-
-  for (const leg of legs) {
-    const opts = Array.from(leg.options.values());
-    const legDate = opts[0]?.ticket.flights[0] ? fullDateFmt(opts[0].ticket.flights[0].departISO) : "";
-    const legDirection = legIdx === 0 ? "OUTBOUND" : legIdx === legs.length - 1 ? "RETURN" : "CONNECTING";
-
-    sections += htmlLegHeader(
-      `Leg ${legIdx + 1} of ${legs.length} &middot; ${legDirection}`,
-      leg.coverage,
-      legDate,
-      opts.length
-    );
-
-    opts.sort((a, b) => parseFloat(a.ticket.price.replace(/[^0-9.]/g, "")) - parseFloat(b.ticket.price.replace(/[^0-9.]/g, "")));
-
-    opts.forEach((opt, oi) => {
-      if (oi > 0) sections += `<tr><td style="padding:6px 48px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:1px dashed #e8e4de;"></td></tr></table></td></tr>`;
-      opt.ticket.flights.forEach((f) => { sections += htmlFlightCard(f, opt.ticket.carrier); });
-      sections += htmlFareTable(opt.ticket);
-    });
-
-    legIdx++;
+  // Pricing combinations table (for multi-leg one-ways)
+  if (legs.length >= 2) {
+    sections += htmlOneWayPricingCombinations(legs);
   }
 
-  // Pricing range
-  const cheapest = scenarios[0];
-  const flexScenario = scenarios.find((s) => s.allFlex);
-  const legRanges = legs.map((leg) => {
-    const prices = Array.from(leg.options.values()).map((o) => parseFloat(o.ticket.price.replace(/[^0-9.]/g, "")));
-    return `${leg.coverage} from ${pfmt(Math.min(...prices))}`;
-  });
+  // Quick reference table (for 3+ total options)
+  const totalOptions = legs.reduce((s, l) => s + l.options.length, 0);
+  if (totalOptions >= 3) {
+    sections += htmlOneWayQuickReference(legs);
+  }
 
-  sections += `<tr><td style="padding:24px 48px 10px 48px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fafaf8;border:1px solid #e8e4de;">
-<tr><td style="padding:18px 20px;">
-<p style="margin:0 0 8px 0;${F}font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#8b7355;font-weight:bold;">Pricing Summary</p>
-<p style="margin:0 0 6px 0;${F}font-size:13px;color:#555555;line-height:1.7;">Your total will depend on the combination you choose.</p>
-<p style="margin:0 0 4px 0;${F}font-size:14px;color:#2c2c2c;font-weight:bold;">Cheapest combination: ${cheapest.totalPrice} per person</p>
-${flexScenario ? `<p style="margin:0 0 4px 0;${F}font-size:13px;color:#2e7d32;">Most flexible: ${flexScenario.totalPrice} per person</p>` : ""}
-<p style="margin:8px 0 0 0;${F}font-size:12px;color:#888888;">${legRanges.join(" &nbsp;&middot;&nbsp; ")}</p>
-</td></tr></table></td></tr>`;
+  // How to reply block
+  sections += htmlOneWayHowToReply(legs);
 
+  // Multi-ticket disclaimer
   sections += htmlMultiTicketDisclaimer(legs.length);
 
   return wrapEmailShell(model, [
