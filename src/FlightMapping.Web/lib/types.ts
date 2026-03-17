@@ -284,6 +284,14 @@ export interface SplitPnrDetection {
   maxEstimatedSavings: number;
   savingsBadge: "green" | "yellow" | "none";
   cheapSeatsAvailable?: number; // exact auth cap from incremental probing
+  tiers?: SplitAllocationTier[]; // multi-tier allocation from probing
+}
+
+export interface SplitAllocationTier {
+  rbd: string;
+  count: number;
+  pricePerPerson: number;
+  subtotal: number;
 }
 
 export interface FareClassInfo {

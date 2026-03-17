@@ -437,16 +437,37 @@ function OptionCard({
   // Use backend-provided split PNR detection (from 1-pax probing)
   const splitDetection: SplitPnrDetection | null = backendSplitDetection ?? null;
 
-  // Build analysis for the panel from backend detection data
+  // Build analysis for the panel from backend detection data (multi-tier aware)
   const splitAnalysis = useMemo((): SplitPnrAnalysis | null => {
     if (!splitDetection) return null;
     const pax = totalPassengers ?? 2;
     const groupTotal = splitDetection.groupPricePerPerson * pax;
-    // Use exact auth cap from incremental probing when available
-    const cheapCount = splitDetection.cheapSeatsAvailable ?? 1;
-    const expensiveCount = pax - cheapCount;
-    const splitTotal = splitDetection.singlePaxPrice * cheapCount + splitDetection.groupPricePerPerson * expensiveCount;
+
+    // Use multi-tier allocation when available, fallback to 2-tier
+    const tiers = splitDetection.tiers && splitDetection.tiers.length > 0
+      ? splitDetection.tiers
+      : [
+          { rbd: splitDetection.singlePaxRbd, count: splitDetection.cheapSeatsAvailable ?? 1, pricePerPerson: splitDetection.singlePaxPrice, subtotal: splitDetection.singlePaxPrice * (splitDetection.cheapSeatsAvailable ?? 1) },
+          { rbd: splitDetection.groupRbd, count: pax - (splitDetection.cheapSeatsAvailable ?? 1), pricePerPerson: splitDetection.groupPricePerPerson, subtotal: splitDetection.groupPricePerPerson * (pax - (splitDetection.cheapSeatsAvailable ?? 1)) },
+        ];
+
+    const splitTotal = tiers.reduce((sum, t) => sum + t.pricePerPerson * t.count, 0);
     const savings = groupTotal - splitTotal;
+
+    const pnrs = tiers.map((t, i) => ({
+      pnrNumber: i + 1,
+      rbd: t.rbd,
+      passengerCount: t.count,
+      farePerPerson: t.pricePerPerson,
+      subtotal: t.pricePerPerson * t.count,
+    }));
+
+    const allocations = tiers.map((t) => ({
+      rbd: t.rbd,
+      count: t.count,
+      farePerPerson: t.pricePerPerson,
+      subtotal: t.pricePerPerson * t.count,
+    }));
 
     const cabin = option.variants[0]?.cabin || "Economy";
     return {
@@ -461,31 +482,13 @@ function OptionCard({
         total: groupTotal,
       },
       recommendedSplit: {
-        pnrs: [
-          {
-            pnrNumber: 1,
-            rbd: splitDetection.singlePaxRbd,
-            passengerCount: cheapCount,
-            farePerPerson: splitDetection.singlePaxPrice,
-            subtotal: splitDetection.singlePaxPrice * cheapCount,
-          },
-          {
-            pnrNumber: 2,
-            rbd: splitDetection.groupRbd,
-            passengerCount: expensiveCount,
-            farePerPerson: splitDetection.groupPricePerPerson,
-            subtotal: splitDetection.groupPricePerPerson * expensiveCount,
-          },
-        ],
+        pnrs,
         total: splitTotal,
         averagePerPerson: splitTotal / pax,
       },
       waterfall: {
         feasible: true,
-        allocations: [
-          { rbd: splitDetection.singlePaxRbd, count: cheapCount, farePerPerson: splitDetection.singlePaxPrice, subtotal: splitDetection.singlePaxPrice * cheapCount },
-          { rbd: splitDetection.groupRbd, count: expensiveCount, farePerPerson: splitDetection.groupPricePerPerson, subtotal: splitDetection.groupPricePerPerson * expensiveCount },
-        ],
+        allocations,
         totalCost: splitTotal,
         groupCost: groupTotal,
         savings,

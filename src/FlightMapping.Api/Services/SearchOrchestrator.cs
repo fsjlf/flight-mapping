@@ -466,8 +466,8 @@ public class SearchOrchestrator : ISearchOrchestrator
 
     /// <summary>
     /// Detect split PNR opportunities using incremental probe data to find exact breakpoints.
-    /// First finds the cheapest N-pax price per flight+cabin, then compares against probes.
-    /// Walks from 1 pax upward to find where the price jumps (auth cap breakpoint).
+    /// Walks from 1 pax upward, tracking every price transition to build multi-tier allocations.
+    /// Example: for 5 pax, might produce 3×P + 1×Z + 1×C if auth caps are 3, 4, 5.
     /// </summary>
     private static List<SplitPnrDetection> DetectSplitOpportunitiesWithBreakpoints(
         List<EnrichedItinerary> mainResults,
@@ -476,7 +476,7 @@ public class SearchOrchestrator : ISearchOrchestrator
     {
         if (!probesByPax.ContainsKey(1)) return new List<SplitPnrDetection>();
 
-        // First: find cheapest N-pax price per flight+cabin (avoid false positives)
+        // Find cheapest N-pax price per flight+cabin (avoid false positives)
         var mainCheapest = new Dictionary<string, (decimal Price, string Rbd, EnrichedItinerary Itin)>();
         foreach (var itin in mainResults)
         {
@@ -495,32 +495,71 @@ public class SearchOrchestrator : ISearchOrchestrator
             var flightKey = BuildFlightKey(main.Itin);
             var groupPrice = main.Price;
 
-            // Get 1-pax price for this flight+cabin
             if (!probesByPax[1].TryGetValue(cabinKey, out var probe1)) continue;
-            if (probe1.Price >= groupPrice) continue; // 1-pax isn't cheaper — no opportunity
+            if (probe1.Price >= groupPrice) continue;
 
-            // Walk upward to find the breakpoint where price jumps
-            var cheapPrice = probe1.Price;
-            var cheapRbd = probe1.Rbd;
-            var cheapSeats = 1;
+            // Walk from 1 to N-1, tracking every price transition → multi-tier allocation
+            var tiers = new List<SplitAllocationTier>();
+            var currentPrice = probe1.Price;
+            var currentRbd = probe1.Rbd;
+            var currentCount = 1;
 
-            for (int pax = 2; pax < totalPax; pax++)
+            for (int pax = 2; pax <= totalPax; pax++)
             {
-                if (!probesByPax.TryGetValue(pax, out var probeN)) break;
-                if (!probeN.TryGetValue(cabinKey, out var probePrice)) break;
+                decimal thisPrice;
+                string thisRbd;
 
-                if (Math.Abs(probePrice.Price - cheapPrice) < 5m)
+                if (pax == totalPax)
                 {
-                    cheapSeats = pax;
+                    // The N-pax price is the group price from the main search
+                    thisPrice = groupPrice;
+                    thisRbd = main.Rbd;
+                }
+                else if (probesByPax.TryGetValue(pax, out var probeN) && probeN.TryGetValue(cabinKey, out var probePrice))
+                {
+                    thisPrice = probePrice.Price;
+                    thisRbd = probePrice.Rbd;
                 }
                 else
                 {
-                    break;
+                    // No probe data for this count — assume price jumped to group price
+                    thisPrice = groupPrice;
+                    thisRbd = main.Rbd;
+                }
+
+                if (Math.Abs(thisPrice - currentPrice) < 5m)
+                {
+                    // Same price tier — increment count
+                    currentCount++;
+                }
+                else
+                {
+                    // Price changed — close current tier and start new one
+                    tiers.Add(new SplitAllocationTier
+                    {
+                        Rbd = currentRbd,
+                        Count = currentCount,
+                        PricePerPerson = currentPrice,
+                    });
+                    currentPrice = thisPrice;
+                    currentRbd = thisRbd;
+                    currentCount = 1;
                 }
             }
+            // Close the last tier
+            tiers.Add(new SplitAllocationTier
+            {
+                Rbd = currentRbd,
+                Count = currentCount,
+                PricePerPerson = currentPrice,
+            });
 
-            var savings = (groupPrice - cheapPrice) * cheapSeats;
+            // If only one tier, no split opportunity
+            if (tiers.Count <= 1) continue;
+
+            var splitTotal = tiers.Sum(t => t.Subtotal);
             var totalGroupCost = groupPrice * totalPax;
+            var savings = totalGroupCost - splitTotal;
             var pct = totalGroupCost > 0 ? (savings / totalGroupCost) * 100 : 0;
 
             if (savings < 20) continue;
@@ -535,16 +574,17 @@ public class SearchOrchestrator : ISearchOrchestrator
             {
                 OpportunityDetected = true,
                 FlightKey = flightKey,
-                SinglePaxPrice = cheapPrice,
-                SinglePaxRbd = cheapRbd,
+                SinglePaxPrice = tiers[0].PricePerPerson,
+                SinglePaxRbd = tiers[0].Rbd,
                 GroupPricePerPerson = groupPrice,
                 GroupRbd = main.Rbd,
-                DeltaPerPerson = groupPrice - cheapPrice,
+                DeltaPerPerson = groupPrice - tiers[0].PricePerPerson,
                 TotalPassengers = totalPax,
                 MinEstimatedSavings = savings,
                 MaxEstimatedSavings = savings,
                 SavingsBadge = badge,
-                CheapSeatsAvailable = cheapSeats,
+                CheapSeatsAvailable = tiers[0].Count,
+                Tiers = tiers,
             };
         }
 
