@@ -1838,10 +1838,29 @@ function pickNotableFeatures(features: { name: string; free: boolean; group: str
   // Priority order: seat amenities, baggage, lounge, boarding, meals
   const priority = ["SA", "BG", "LG", "ML", "TS", "IE", "FF", "UP"];
   // Skip very generic / noisy features
-  const skipPatterns = /^(PERSONAL ITEM|CARRY ON|MILEAGE ACCRUAL|AADVANTAGE|BASIC SEAT|CHANGEABLE TICKET|NON REFUNDABLE|REFUNDABLE)$/i;
+  const skipPatterns = /^(PERSONAL ITEM|CARRY ON|CARRY ON HAND BAGGAGE|MILEAGE ACCRUAL|AADVANTAGE|BASIC SEAT|CHANGEABLE TICKET|NON REFUNDABLE|REFUNDABLE)$/i;
+
+  // ── Pre-aggregate checked bags: count free & chargeable bag features
+  const bagChecked = features.filter(
+    (f) => f.group === "BG" && /CHECK|EXCESS BAG/i.test(f.name) && !/CARRY|PERSONAL/i.test(f.name)
+  );
+  const freeBags = bagChecked.filter((f) => f.free).length;
+  const chargeableBags = bagChecked.filter((f) => !f.free).length;
+  let bagLabel = "";
+  if (freeBags > 0) {
+    bagLabel = freeBags === 1 ? "1 Checked Bag" : `${freeBags}x Checked Bags`;
+  } else if (chargeableBags > 0) {
+    bagLabel = "Checked Bag (paid)";
+  }
 
   const seen = new Set<string>();
   const result: string[] = [];
+
+  // If we have an aggregated bag label, add it first (BG is high priority)
+  if (bagLabel) {
+    result.push(bagLabel);
+    seen.add(bagLabel);
+  }
 
   // Sort by priority group, then free before chargeable
   const sorted = [...features].sort((a, b) => {
@@ -1853,6 +1872,8 @@ function pickNotableFeatures(features: { name: string; free: boolean; group: str
 
   for (const f of sorted) {
     if (skipPatterns.test(f.name.trim())) continue;
+    // Skip individual bag features — already aggregated above
+    if (f.group === "BG" && /CHECK|EXCESS BAG/i.test(f.name) && !/CARRY|PERSONAL/i.test(f.name)) continue;
     const humanized = humanizeFeature(f.name);
     if (seen.has(humanized)) continue;
     seen.add(humanized);
