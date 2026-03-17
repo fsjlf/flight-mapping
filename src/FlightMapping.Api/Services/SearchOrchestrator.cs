@@ -362,7 +362,9 @@ public class SearchOrchestrator : ISearchOrchestrator
 
     /// <summary>
     /// Compare N-pax search results with 1-pax probe results.
-    /// For each flight+cabin where 1-pax is cheaper, emit a split PNR detection.
+    /// For each flight+cabin where the CHEAPEST 1-pax fare is cheaper than the CHEAPEST N-pax fare,
+    /// emit a split PNR detection. This avoids false positives from comparing cheap probes
+    /// against expensive N-pax variants when the same cheap fare is already available for N pax.
     /// </summary>
     private static List<SplitPnrDetection> DetectSplitOpportunities(
         List<EnrichedItinerary> mainResults,
@@ -371,7 +373,7 @@ public class SearchOrchestrator : ISearchOrchestrator
     {
         if (probeResults.Count == 0) return new List<SplitPnrDetection>();
 
-        // Build lookup: flightFingerprint+cabin → cheapest 1-pax price
+        // Build lookup: flightCabinKey → cheapest 1-pax price
         var probePrices = new Dictionary<string, (decimal Price, string Rbd, string BrandName)>();
         foreach (var itin in probeResults)
         {
@@ -383,38 +385,46 @@ public class SearchOrchestrator : ISearchOrchestrator
             }
         }
 
-        // For each flight in N-pax results, check if 1-pax was cheaper in the same cabin
-        var detections = new Dictionary<string, SplitPnrDetection>();
+        // Build lookup: flightCabinKey → cheapest N-pax price
+        // This is critical: we compare 1-pax against the CHEAPEST N-pax fare, not any random variant
+        var mainCheapest = new Dictionary<string, (decimal Price, string Rbd, EnrichedItinerary Itin)>();
         foreach (var itin in mainResults)
         {
             var key = BuildFlightCabinKey(itin);
-            if (!probePrices.TryGetValue(key, out var probe)) continue;
-
-            var groupPrice = itin.Pricing.PricePerAdult;
-            var delta = groupPrice - probe.Price;
-            if (delta <= 0) continue;
-
-            // Use flight key (without cabin) for dedup — one detection per physical flight
-            var flightKey = BuildFlightKey(itin);
-            if (detections.ContainsKey(flightKey))
+            var price = itin.Pricing.PricePerAdult;
+            if (!mainCheapest.TryGetValue(key, out var existing) || price < existing.Price)
             {
-                // Keep the one with bigger savings
-                if (delta <= detections[flightKey].DeltaPerPerson) continue;
+                mainCheapest[key] = (price, itin.Segments[0].BookingClass, itin);
             }
+        }
+
+        // Compare: only flag when 1-pax cheapest < N-pax cheapest for same flight+cabin
+        var detections = new Dictionary<string, SplitPnrDetection>();
+        foreach (var (cabinKey, main) in mainCheapest)
+        {
+            if (!probePrices.TryGetValue(cabinKey, out var probe)) continue;
+
+            var delta = main.Price - probe.Price;
+            if (delta <= 0) continue; // 1-pax isn't cheaper — no opportunity
+
+            var flightKey = BuildFlightKey(main.Itin);
 
             // Conservative estimate: at least 1 passenger can get cheap fare, up to half the group
             var minCheapSeats = 1;
-            var maxCheapSeats = Math.Max(1, totalPax / 2); // conservative: assume at most half can get cheap
+            var maxCheapSeats = Math.Max(1, totalPax / 2);
             var minSavings = delta * minCheapSeats;
             var maxSavings = delta * maxCheapSeats;
-            var totalGroupCost = groupPrice * totalPax;
+            var totalGroupCost = main.Price * totalPax;
             var maxPct = totalGroupCost > 0 ? (maxSavings / totalGroupCost) * 100 : 0;
 
-            // Suppress trivial savings
             if (minSavings < 20 && maxPct < 2) continue;
 
             var badge = maxPct >= 8 ? "green" : maxPct >= 3 ? "yellow" : "none";
             if (badge == "none") continue;
+
+            // Dedup: keep biggest savings per physical flight
+            if (detections.TryGetValue(flightKey, out var existing) && existing.MaxEstimatedSavings >= maxSavings)
+                continue;
 
             detections[flightKey] = new SplitPnrDetection
             {
@@ -422,8 +432,8 @@ public class SearchOrchestrator : ISearchOrchestrator
                 FlightKey = flightKey,
                 SinglePaxPrice = probe.Price,
                 SinglePaxRbd = probe.Rbd,
-                GroupPricePerPerson = groupPrice,
-                GroupRbd = itin.Segments[0].BookingClass,
+                GroupPricePerPerson = main.Price,
+                GroupRbd = main.Rbd,
                 DeltaPerPerson = delta,
                 TotalPassengers = totalPax,
                 MinEstimatedSavings = minSavings,
@@ -456,7 +466,8 @@ public class SearchOrchestrator : ISearchOrchestrator
 
     /// <summary>
     /// Detect split PNR opportunities using incremental probe data to find exact breakpoints.
-    /// For each flight+cabin, walks from 1 pax upward to find where the price jumps.
+    /// First finds the cheapest N-pax price per flight+cabin, then compares against probes.
+    /// Walks from 1 pax upward to find where the price jumps (auth cap breakpoint).
     /// </summary>
     private static List<SplitPnrDetection> DetectSplitOpportunitiesWithBreakpoints(
         List<EnrichedItinerary> mainResults,
@@ -465,41 +476,49 @@ public class SearchOrchestrator : ISearchOrchestrator
     {
         if (!probesByPax.ContainsKey(1)) return new List<SplitPnrDetection>();
 
-        var detections = new Dictionary<string, SplitPnrDetection>();
-
+        // First: find cheapest N-pax price per flight+cabin (avoid false positives)
+        var mainCheapest = new Dictionary<string, (decimal Price, string Rbd, EnrichedItinerary Itin)>();
         foreach (var itin in mainResults)
         {
-            var cabinKey = BuildFlightCabinKey(itin);
-            var flightKey = BuildFlightKey(itin);
-            var groupPrice = itin.Pricing.PricePerAdult;
+            var key = BuildFlightCabinKey(itin);
+            var price = itin.Pricing.PricePerAdult;
+            if (!mainCheapest.TryGetValue(key, out var existing) || price < existing.Price)
+            {
+                mainCheapest[key] = (price, itin.Segments[0].BookingClass, itin);
+            }
+        }
+
+        var detections = new Dictionary<string, SplitPnrDetection>();
+
+        foreach (var (cabinKey, main) in mainCheapest)
+        {
+            var flightKey = BuildFlightKey(main.Itin);
+            var groupPrice = main.Price;
 
             // Get 1-pax price for this flight+cabin
             if (!probesByPax[1].TryGetValue(cabinKey, out var probe1)) continue;
-            if (probe1.Price >= groupPrice) continue; // no opportunity
+            if (probe1.Price >= groupPrice) continue; // 1-pax isn't cheaper — no opportunity
 
             // Walk upward to find the breakpoint where price jumps
             var cheapPrice = probe1.Price;
             var cheapRbd = probe1.Rbd;
-            var cheapSeats = 1; // at least 1 seat at cheap price
+            var cheapSeats = 1;
 
             for (int pax = 2; pax < totalPax; pax++)
             {
                 if (!probesByPax.TryGetValue(pax, out var probeN)) break;
                 if (!probeN.TryGetValue(cabinKey, out var probePrice)) break;
 
-                // If this pax count still gets the cheap price (within $5 tolerance for rounding)
                 if (Math.Abs(probePrice.Price - cheapPrice) < 5m)
                 {
                     cheapSeats = pax;
                 }
                 else
                 {
-                    // Price jumped — this is the breakpoint
                     break;
                 }
             }
 
-            var expensiveSeats = totalPax - cheapSeats;
             var savings = (groupPrice - cheapPrice) * cheapSeats;
             var totalGroupCost = groupPrice * totalPax;
             var pct = totalGroupCost > 0 ? (savings / totalGroupCost) * 100 : 0;
@@ -519,13 +538,12 @@ public class SearchOrchestrator : ISearchOrchestrator
                 SinglePaxPrice = cheapPrice,
                 SinglePaxRbd = cheapRbd,
                 GroupPricePerPerson = groupPrice,
-                GroupRbd = itin.Segments[0].BookingClass,
+                GroupRbd = main.Rbd,
                 DeltaPerPerson = groupPrice - cheapPrice,
                 TotalPassengers = totalPax,
-                MinEstimatedSavings = savings, // exact: cheapSeats at cheap price
-                MaxEstimatedSavings = savings, // same: we now know exact breakpoint
+                MinEstimatedSavings = savings,
+                MaxEstimatedSavings = savings,
                 SavingsBadge = badge,
-                // Store breakpoint info in existing fields
                 CheapSeatsAvailable = cheapSeats,
             };
         }
