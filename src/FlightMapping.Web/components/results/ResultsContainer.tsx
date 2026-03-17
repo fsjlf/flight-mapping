@@ -2,10 +2,10 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { SearchResponse, SegmentInput } from "@/lib/types";
 import { formatCurrency } from "@/lib/formatters";
-import { groupItineraries } from "@/lib/itineraryGrouping";
+import { groupItineraries, LinkedLegGroup } from "@/lib/itineraryGrouping";
 import { groupByFlight } from "@/lib/itineraryGrouping2";
 import { FilterState, DEFAULT_FILTER_STATE } from "@/lib/filterTypes";
-import { filterAndSort, extractAirlines } from "@/lib/filterItineraries";
+import { filterAndSort, filterAndSortSmartPackages, computeMinStopsPerSeg, extractAirlines } from "@/lib/filterItineraries";
 import LoadingSpinner from "../ui/LoadingSpinner";
 import FilterBar from "./FilterBar";
 import RoundTripList from "./RoundTripList";
@@ -17,6 +17,9 @@ interface Props {
   loading: boolean;
   error: string | null;
   searchSegments: SegmentInput[];
+  onExportHistory?: () => void;
+  searchHistoryCount?: number;
+  onOpenBuilder?: () => void;
 }
 
 type ResultTab = "roundtrip" | "mixmatch";
@@ -26,14 +29,26 @@ export default function ResultsContainer({
   loading,
   error,
   searchSegments,
+  onExportHistory,
+  searchHistoryCount,
+  onOpenBuilder,
 }: Props) {
   const [activeTab, setActiveTab] = useState<ResultTab>("roundtrip");
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTER_STATE);
 
-  // Reset filters when new search results arrive
+  // Reset filters and auto-select best tab when new search results arrive
   const searchId = response?.metadata?.searchDurationMs;
   useEffect(() => {
     setFilters(DEFAULT_FILTER_STATE);
+    // Auto-select mixmatch when no single tickets exist
+    if (response && searchSegments.length > 1) {
+      const grouped = groupItineraries(response.itineraries, searchSegments);
+      if (grouped.singleTickets.length === 0) {
+        setActiveTab("mixmatch");
+      } else {
+        setActiveTab("roundtrip");
+      }
+    }
   }, [searchId, response]);
 
   const handleFilterChange = useCallback((update: Partial<FilterState>) => {
@@ -73,23 +88,34 @@ export default function ResultsContainer({
   const grouped = groupItineraries(itineraries, searchSegments);
   const currency = itineraries[0]?.pricing.currencyCode || "USD";
 
-  // Filter + sort
-  const filteredSingleTickets = filterAndSort(grouped.singleTickets, filters);
+  // Filter + sort (smart stop filtering for multi-segment itineraries)
+  const filteredSingleTickets = filterAndSortSmartPackages(grouped.singleTickets, filters);
+
+  // Min achievable stops per segment position (for "no nonstop" flags)
+  const rtMinStops = computeMinStopsPerSeg(grouped.singleTickets);
   const filteredByLeg = grouped.separateByLeg.map((leg) =>
     filterAndSort(leg, filters)
   );
+  const filteredLinkedGroups: LinkedLegGroup[] = grouped.linkedLegGroups.map((g) => ({
+    ...g,
+    itineraries: filterAndSortSmartPackages(g.itineraries, filters),
+  })).filter((g) => g.itineraries.length > 0);
 
   // Grouped counts (unique flight combos after dedup)
   const groupedSingleTickets = groupByFlight(filteredSingleTickets);
   const groupedByLeg = filteredByLeg.map((leg) => groupByFlight(leg));
+  const linkedGroupCount = filteredLinkedGroups.reduce(
+    (s, g) => s + groupByFlight(g.itineraries).length, 0
+  );
   const groupedSeparateCount = groupedByLeg.reduce(
     (s, l) => s + l.length,
     0
-  );
+  ) + linkedGroupCount;
   const totalFilteredCount = groupedSingleTickets.length + groupedSeparateCount;
   const totalUnfilteredCount =
     groupByFlight(grouped.singleTickets).length +
-    grouped.separateByLeg.reduce((s, l) => s + groupByFlight(l).length, 0);
+    grouped.separateByLeg.reduce((s, l) => s + groupByFlight(l).length, 0) +
+    grouped.linkedLegGroups.reduce((s, g) => s + groupByFlight(g.itineraries).length, 0);
 
   // Cheapest after filtering (for comparison banner)
   const cheapestRT =
@@ -133,6 +159,30 @@ export default function ResultsContainer({
           <span className="mx-2 text-gray-300">|</span>
           {(metadata.searchDurationMs / 1000).toFixed(1)}s
         </div>
+        <div className="flex items-center gap-2">
+          {onOpenBuilder && (
+            <button
+              onClick={onOpenBuilder}
+              className="text-sm px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center gap-1.5 font-medium"
+              title="Open the AI-assisted strategy comparison builder"
+            >
+              <span className="text-indigo-200">✦</span>
+              Strategy Builder
+            </button>
+          )}
+          {onExportHistory && searchHistoryCount && searchHistoryCount > 0 && (
+            <button
+              onClick={onExportHistory}
+              className="text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors flex items-center gap-1.5"
+              title={`Export ${searchHistoryCount} search(es) as JSON`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Export JSON ({searchHistoryCount})
+            </button>
+          )}
+        </div>
       </div>
 
       {grouped.showTabs ? (
@@ -160,6 +210,29 @@ export default function ResultsContainer({
                 </div>
               </>
             )}
+            {grouped.cheapestHybridBreakdown !== null && (
+              <>
+                <span className="text-gray-300">|</span>
+                <div>
+                  <div>
+                    <span className="text-gray-500">Cheapest package combo: </span>
+                    <span className="font-bold text-blue-700">
+                      {formatCurrency(grouped.cheapestHybridBreakdown.totalPerAdult, currency)}
+                    </span>
+                    <span className="text-gray-500">/person</span>
+                  </div>
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    {grouped.cheapestHybridBreakdown.packageLabel}:{" "}
+                    {formatCurrency(grouped.cheapestHybridBreakdown.packagePerAdult, currency)}
+                    {grouped.cheapestHybridBreakdown.owLegs.map((leg, i) => (
+                      <span key={i}>
+                        {" · "}{leg.label}: {formatCurrency(leg.pricePerAdult, currency)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
             {cheapestRT !== null && cheapestMM !== null && (
               <Savings rt={cheapestRT} mm={cheapestMM} currency={currency} />
             )}
@@ -180,16 +253,18 @@ export default function ResultsContainer({
 
           {/* Tab bar */}
           <div className="flex gap-1 mb-5 bg-gray-100 rounded-lg p-1 w-fit">
-            <button
-              onClick={() => setActiveTab("roundtrip")}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                activeTab === "roundtrip"
-                  ? "bg-white text-gray-900 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Round Trip ({groupedSingleTickets.length})
-            </button>
+            {groupedSingleTickets.length > 0 && (
+              <button
+                onClick={() => setActiveTab("roundtrip")}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === "roundtrip"
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Round Trip ({groupedSingleTickets.length})
+              </button>
+            )}
             <button
               onClick={() => setActiveTab("mixmatch")}
               className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -204,11 +279,12 @@ export default function ResultsContainer({
 
           {/* Tab content */}
           {activeTab === "roundtrip" ? (
-            <RoundTripList itineraries={filteredSingleTickets} />
+            <RoundTripList itineraries={filteredSingleTickets} minStopsPerSeg={rtMinStops} />
           ) : (
             <MixMatchPanel
               legs={filteredByLeg}
               searchSegments={searchSegments}
+              linkedLegGroups={filteredLinkedGroups}
             />
           )}
         </>

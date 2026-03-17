@@ -1,13 +1,15 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   SearchRequest,
   SearchResponse,
   SegmentInput,
   PassengerConfig,
   SearchPreferences,
+  SearchHistoryEntry,
 } from "@/lib/types";
 import { searchFlights } from "@/lib/api";
+import { buildHistoryEntry } from "@/lib/exportSearchHistory";
 
 const defaultSegment: SegmentInput = {
   origin: "",
@@ -29,9 +31,20 @@ export function useSearch() {
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const searchHistoryRef = useRef<SearchHistoryEntry[]>([]);
 
   const addSegment = useCallback(() => {
-    setSegments((prev) => [...prev, { ...defaultSegment }]);
+    setSegments((prev) => {
+      const last = prev[prev.length - 1];
+      return [
+        ...prev,
+        {
+          ...defaultSegment,
+          origin: last?.destination || "",
+          departureDate: last?.departureDate || "",
+        },
+      ];
+    });
   }, []);
 
   const removeSegment = useCallback((index: number) => {
@@ -79,6 +92,17 @@ export function useSearch() {
       };
       const data = await searchFlights(request);
       setResponse(data);
+
+      // Accumulate search history for export
+      const entry = buildHistoryEntry(
+        {
+          segments: validSegments,
+          passengers,
+          preferences: Object.keys(preferences).length > 0 ? preferences : undefined,
+        },
+        data
+      );
+      searchHistoryRef.current = [...searchHistoryRef.current, entry];
     } catch (e) {
       setError(e instanceof Error ? e.message : "Search failed");
     } finally {
@@ -103,5 +127,6 @@ export function useSearch() {
     updatePreferences,
     applyParsed,
     search,
+    searchHistory: searchHistoryRef.current,
   };
 }
