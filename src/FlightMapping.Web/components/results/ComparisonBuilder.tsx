@@ -1929,8 +1929,10 @@ function buildFareDetailsHtml(ticket: Scenario["tickets"][0]): string {
     return html;
   }
 
+  // Compare amenity sets regardless of order — same items = same amenities
+  const normalise = (items: string[]) => [...items].sort().join("|");
   const allSameAmenities = perFlightAmenities.length <= 1 ||
-    perFlightAmenities.every((items) => items.join("|") === perFlightAmenities[0].join("|"));
+    perFlightAmenities.every((items) => normalise(items) === normalise(perFlightAmenities[0]));
 
   if (allSameAmenities) {
     // Same amenities on all flights — show as flat list
