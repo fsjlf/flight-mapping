@@ -159,7 +159,7 @@ public class SearchOrchestrator : ISearchOrchestrator
 
                     // Build pax→(flightCabinKey→cheapestPrice) lookup for each probe count
                     // Include the 1-pax results we already have
-                    var allProbesByPax = new Dictionary<int, Dictionary<string, (decimal Price, string Rbd)>>
+                    var allProbesByPax = new Dictionary<int, Dictionary<string, (decimal Price, string Rbd, List<string> SegmentRbds)>>
                     {
                         [1] = BuildProbePriceLookup(probeResults)
                     };
@@ -448,17 +448,18 @@ public class SearchOrchestrator : ISearchOrchestrator
     }
 
     /// <summary>Build a lookup of flightCabinKey → cheapest price for a set of probe results.</summary>
-    private static Dictionary<string, (decimal Price, string Rbd)> BuildProbePriceLookup(
+    private static Dictionary<string, (decimal Price, string Rbd, List<string> SegmentRbds)> BuildProbePriceLookup(
         List<EnrichedItinerary> probeResults)
     {
-        var lookup = new Dictionary<string, (decimal Price, string Rbd)>();
+        var lookup = new Dictionary<string, (decimal Price, string Rbd, List<string> SegmentRbds)>();
         foreach (var itin in probeResults)
         {
             var key = BuildFlightCabinKey(itin);
             var price = itin.Pricing.PricePerAdult;
             if (!lookup.TryGetValue(key, out var existing) || price < existing.Price)
             {
-                lookup[key] = (price, itin.Segments[0].BookingClass);
+                var segRbds = itin.Segments.Select(s => s.BookingClass).ToList();
+                lookup[key] = (price, itin.Segments[0].BookingClass, segRbds);
             }
         }
         return lookup;
@@ -471,7 +472,7 @@ public class SearchOrchestrator : ISearchOrchestrator
     /// </summary>
     private static List<SplitPnrDetection> DetectSplitOpportunitiesWithBreakpoints(
         List<EnrichedItinerary> mainResults,
-        Dictionary<int, Dictionary<string, (decimal Price, string Rbd)>> probesByPax,
+        Dictionary<int, Dictionary<string, (decimal Price, string Rbd, List<string> SegmentRbds)>> probesByPax,
         int totalPax)
     {
         if (!probesByPax.ContainsKey(1)) return new List<SplitPnrDetection>();
@@ -502,54 +503,58 @@ public class SearchOrchestrator : ISearchOrchestrator
             var tiers = new List<SplitAllocationTier>();
             var currentPrice = probe1.Price;
             var currentRbd = probe1.Rbd;
+            var currentSegRbds = probe1.SegmentRbds;
             var currentCount = 1;
+            var mainSegRbds = main.Itin.Segments.Select(s => s.BookingClass).ToList();
 
             for (int pax = 2; pax <= totalPax; pax++)
             {
                 decimal thisPrice;
                 string thisRbd;
+                List<string> thisSegRbds;
 
                 if (pax == totalPax)
                 {
-                    // The N-pax price is the group price from the main search
                     thisPrice = groupPrice;
                     thisRbd = main.Rbd;
+                    thisSegRbds = mainSegRbds;
                 }
                 else if (probesByPax.TryGetValue(pax, out var probeN) && probeN.TryGetValue(cabinKey, out var probePrice))
                 {
                     thisPrice = probePrice.Price;
                     thisRbd = probePrice.Rbd;
+                    thisSegRbds = probePrice.SegmentRbds;
                 }
                 else
                 {
-                    // No probe data for this count — assume price jumped to group price
                     thisPrice = groupPrice;
                     thisRbd = main.Rbd;
+                    thisSegRbds = mainSegRbds;
                 }
 
                 if (Math.Abs(thisPrice - currentPrice) < 5m)
                 {
-                    // Same price tier — increment count
                     currentCount++;
                 }
                 else
                 {
-                    // Price changed — close current tier and start new one
                     tiers.Add(new SplitAllocationTier
                     {
                         Rbd = currentRbd,
+                        SegmentRbds = currentSegRbds,
                         Count = currentCount,
                         PricePerPerson = currentPrice,
                     });
                     currentPrice = thisPrice;
                     currentRbd = thisRbd;
+                    currentSegRbds = thisSegRbds;
                     currentCount = 1;
                 }
             }
-            // Close the last tier
             tiers.Add(new SplitAllocationTier
             {
                 Rbd = currentRbd,
+                SegmentRbds = currentSegRbds,
                 Count = currentCount,
                 PricePerPerson = currentPrice,
             });

@@ -457,6 +457,7 @@ function OptionCard({
     const pnrs = tiers.map((t, i) => ({
       pnrNumber: i + 1,
       rbd: t.rbd,
+      segmentRbds: t.segmentRbds,
       passengerCount: t.count,
       farePerPerson: t.pricePerPerson,
       subtotal: t.pricePerPerson * t.count,

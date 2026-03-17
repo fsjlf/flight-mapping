@@ -289,6 +289,7 @@ export interface SplitPnrDetection {
 
 export interface SplitAllocationTier {
   rbd: string;
+  segmentRbds?: string[]; // per-segment RBDs for roundtrips (e.g. ["Z","I"])
   count: number;
   pricePerPerson: number;
   subtotal: number;
@@ -363,6 +364,7 @@ export interface PriceBreakpoint {
 export interface PnrGroup {
   pnrNumber: number;
   rbd: string;
+  segmentRbds?: string[]; // per-segment RBDs for roundtrips (e.g. ["Z","I"])
   passengerCount: number;
   farePerPerson: number;
   subtotal: number;

@@ -22,6 +22,8 @@ public class SplitPnrDetection
 public class SplitAllocationTier
 {
     public string Rbd { get; set; } = string.Empty;
+    /// <summary>Per-segment RBDs for roundtrips (e.g. ["Z","I"] = outbound Z, return I)</summary>
+    public List<string> SegmentRbds { get; set; } = new();
     public int Count { get; set; }
     public decimal PricePerPerson { get; set; }
     public decimal Subtotal => Count * PricePerPerson;

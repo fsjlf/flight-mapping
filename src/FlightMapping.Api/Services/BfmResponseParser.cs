@@ -147,7 +147,7 @@ public class BfmResponseParser : IBfmResponseParser
                     totalMiles += segment.Legs.Sum(l => l.TotalMilesFlown);
                 }
 
-                var itinPricing = BuildPricing(fare, lookups.Taxes);
+                var itinPricing = BuildPricing(fare);
                 var nonRefundable = fare.PassengerInfoList
                     .Any(p => p.PassengerInfo.NonRefundable);
                 var fingerprint = BuildFingerprint(segments);
@@ -419,7 +419,7 @@ public class BfmResponseParser : IBfmResponseParser
         };
     }
 
-    private static ItineraryPricing BuildPricing(BfmFare fare, Dictionary<int, BfmTaxDesc> taxLookup)
+    private static ItineraryPricing BuildPricing(BfmFare fare)
     {
         var total = fare.TotalFare;
 
@@ -440,19 +440,21 @@ public class BfmResponseParser : IBfmResponseParser
             })
             .ToList();
 
-        // Tax breakdown from descriptors
-        // Note: taxDescs are shared descriptors at the response level.
-        // Per-itinerary tax refs aren't in the grouped format, so we surface
-        // all known tax codes. Real per-itinerary breakdown will be validated
-        // against actual Sabre responses.
-        var taxes = taxLookup.Values
-            .Select(t => new TaxBreakdown
+        // Tax breakdown: Sabre's grouped format only provides tax descriptors at the
+        // response level (shared across all itineraries), NOT per-itinerary tax refs.
+        // We use the per-itinerary aggregate TotalTaxAmount (which IS correct) as a
+        // single summary entry. This avoids the previous bug of dumping ALL response-level
+        // tax descriptors (~460 entries, $33K+) into every itinerary's breakdown.
+        var taxes = new List<TaxBreakdown>();
+        if (total.TotalTaxAmount > 0)
+        {
+            taxes.Add(new TaxBreakdown
             {
-                Code = t.Code,
-                Amount = t.Amount,
-                Currency = t.Currency,
-            })
-            .ToList();
+                Code = "TOTAL",
+                Amount = total.TotalTaxAmount,
+                Currency = total.Currency,
+            });
+        }
 
         return new ItineraryPricing
         {

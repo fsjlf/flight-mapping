@@ -55,19 +55,25 @@ export default function SplitComparison({ analysis }: Props) {
           </div>
 
           <div className="space-y-2">
-            {recommendedSplit.pnrs.map((pnr) => (
-              <div key={pnr.pnrNumber} className="flex items-center justify-between text-sm">
-                <span className="text-gray-700">
-                  PNR {pnr.pnrNumber}: {pnr.passengerCount} x {pnr.rbd}
-                  {pnr.brandName && (
-                    <span className="text-gray-400 text-xs ml-1">({pnr.brandName})</span>
-                  )}
-                </span>
-                <span className="text-xs text-gray-500">
-                  @ {formatCurrency(pnr.farePerPerson, "USD")}
-                </span>
-              </div>
-            ))}
+            {recommendedSplit.pnrs.map((pnr) => {
+              // Show per-segment RBDs for roundtrips (e.g. "Z/I" instead of just "Z")
+              const rbdLabel = pnr.segmentRbds && pnr.segmentRbds.length > 1
+                ? pnr.segmentRbds.join("/")
+                : pnr.rbd;
+              return (
+                <div key={pnr.pnrNumber} className="flex items-center justify-between text-sm">
+                  <span className="text-gray-700">
+                    PNR {pnr.pnrNumber}: {pnr.passengerCount} x {rbdLabel}
+                    {pnr.brandName && (
+                      <span className="text-gray-400 text-xs ml-1">({pnr.brandName})</span>
+                    )}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    @ {formatCurrency(pnr.farePerPerson, "USD")}
+                  </span>
+                </div>
+              );
+            })}
           </div>
 
           <div className="text-2xl font-bold text-gray-900 mt-3">
