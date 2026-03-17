@@ -41,7 +41,8 @@ export interface PassengerConfig {
 }
 
 export interface SearchPreferences {
-  cabin?: CabinClass;
+  cabin?: CabinClass;           // single cabin (legacy / fallback)
+  cabins?: CabinClass[];        // multi-cabin search — sent to BFM as multiple CabinPref entries
   preferredCarriers?: string[];
   excludedCarriers?: string[];
   maxStops?: number;

@@ -25,7 +25,7 @@ public class BfmFareComponentDesc
     [JsonPropertyName("directionality")]
     public string? Directionality { get; set; }
 
-    [JsonPropertyName("cabin")]
+    [JsonPropertyName("cabinCode")]
     public string? Cabin { get; set; }
 
     [JsonPropertyName("segments")]

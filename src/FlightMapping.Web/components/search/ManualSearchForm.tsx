@@ -42,7 +42,7 @@ export default function ManualSearchForm({
               segment={seg}
               index={i}
               canRemove={segments.length > 1}
-              globalCabin={preferences.cabin || "Economy"}
+              globalCabin={preferences.cabins?.[0] || preferences.cabin || "Economy"}
               autoFocusDestination={i > 0 && !!seg.origin && !seg.destination}
               onChange={onSegmentChange}
               onRemove={onRemoveSegment}

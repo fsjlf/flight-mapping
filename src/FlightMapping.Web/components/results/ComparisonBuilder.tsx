@@ -127,6 +127,7 @@ function FareRow({
   checked,
   onToggle,
   color,
+  segmentBrands,
 }: {
   label: string;
   perAdult: number;
@@ -135,7 +136,19 @@ function FareRow({
   checked: boolean;
   onToggle: () => void;
   color: string;
+  segmentBrands?: { origin: string; destination: string; brand: string; cabin: string }[];
 }) {
+  // Determine if we have mixed brands across segments
+  const isMixedBrand = segmentBrands && segmentBrands.length > 1
+    && new Set(segmentBrands.map((b) => b.brand)).size > 1;
+
+  const CABIN_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+    Business: { bg: "rgba(139,115,85,0.15)", text: "#d4a96a", border: "rgba(139,115,85,0.3)" },
+    First: { bg: "rgba(168,130,72,0.15)", text: "#d4a96a", border: "rgba(168,130,72,0.3)" },
+    PremiumEconomy: { bg: "rgba(99,140,180,0.12)", text: "#7cb3d4", border: "rgba(99,140,180,0.25)" },
+    Economy: { bg: "rgba(100,116,139,0.1)", text: "#94a3b8", border: "rgba(100,116,139,0.2)" },
+  };
+
   return (
     <div
       onClick={onToggle}
@@ -146,6 +159,7 @@ function FareRow({
         border: `1px solid ${checked ? `${color}45` : "transparent"}`,
       }}
     >
+      {/* Main row: checkbox + label + flex badge + price */}
       <div className="flex items-center gap-2">
         <div
           className="shrink-0 flex items-center justify-center transition-all duration-100"
@@ -163,12 +177,16 @@ function FareRow({
             </span>
           )}
         </div>
-        <span
-          className="text-[10px] flex-1"
-          style={{ fontWeight: checked ? 700 : 400, color: checked ? "#f1f5f9" : "#6b7280" }}
-        >
-          {label}
-        </span>
+        {!isMixedBrand ? (
+          <span
+            className="text-[10px] flex-1"
+            style={{ fontWeight: checked ? 700 : 400, color: checked ? "#f1f5f9" : "#6b7280" }}
+          >
+            {label}
+          </span>
+        ) : (
+          <span className="flex-1" />
+        )}
         {refundable && (
           <span className="text-[7px] font-bold tracking-wider text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-[5px] py-[1px] rounded-[3px]">
             FLEX
@@ -185,6 +203,35 @@ function FareRow({
           {pfmt(perAdult)}
         </span>
       </div>
+
+      {/* Per-segment brand badges for mixed-brand fares */}
+      {isMixedBrand && segmentBrands && (
+        <div className="flex items-center gap-[4px] pl-[21px] mt-[3px] mb-[1px] flex-wrap">
+          {segmentBrands.map((sb, i) => {
+            const colors = CABIN_COLORS[sb.cabin] || CABIN_COLORS.Economy;
+            return (
+              <span key={i} className="inline-flex items-center gap-[3px]">
+                <span
+                  className="text-[7px] font-bold tracking-wide rounded-[3px] px-[5px] py-[2px]"
+                  style={{ background: colors.bg, color: colors.text, border: `1px solid ${colors.border}` }}
+                >
+                  {sb.origin}→{sb.destination}
+                </span>
+                <span
+                  className="text-[8px] font-semibold"
+                  style={{ color: checked ? "#e2e8f0" : "#9ca3af" }}
+                >
+                  {sb.brand}
+                </span>
+                {i < segmentBrands.length - 1 && (
+                  <span className="text-[8px] text-slate-700 mx-[1px]">+</span>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       {fareTerms && (fareTerms.changeSummary !== "No Changes" || fareTerms.baggage || fareTerms.seatsAvailable > 0) && (
         <div className="flex items-center gap-[6px] pl-[21px] mt-[2px] flex-wrap">
           {fareTerms.refundPolicy !== "none" && fareTerms.refundPolicy !== "full" && (
@@ -292,18 +339,31 @@ function CarrierFareTabs({
           Fare class{option.variants.length > 1 ? "es" : ""}
         </div>
       )}
-      {activeItems.map(({ variant: v, originalIndex: vi }) => (
-        <FareRow
-          key={vi}
-          label={v.label}
-          perAdult={v.perAdult}
-          refundable={v.refundable}
-          fareTerms={v.fareTerms}
-          checked={selectedVariantIndices.has(vi)}
-          onToggle={() => onVariantToggle(option.id, vi)}
-          color={color}
-        />
-      ))}
+      {activeItems.map(({ variant: v, originalIndex: vi }) => {
+        // Build per-segment brand info for mixed-brand badge display
+        const segs = v.itinerary?.segments;
+        const segBrands = segs && segs.length > 1
+          ? segs.map((s) => ({
+              origin: s.origin,
+              destination: s.destination,
+              brand: s.brand?.name || (s.cabin || "Economy"),
+              cabin: s.cabin || "Economy",
+            }))
+          : undefined;
+        return (
+          <FareRow
+            key={vi}
+            label={v.label}
+            perAdult={v.perAdult}
+            refundable={v.refundable}
+            fareTerms={v.fareTerms}
+            checked={selectedVariantIndices.has(vi)}
+            onToggle={() => onVariantToggle(option.id, vi)}
+            color={color}
+            segmentBrands={segBrands}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -527,6 +587,11 @@ function OptionCard({
                 <span className="text-[8px] text-slate-600">
                   {seg.origin}–{seg.destination}
                 </span>
+                {seg.cabin && seg.cabin !== "Economy" && (
+                  <span className="text-[7px] font-bold tracking-wider px-[4px] py-[0.5px] rounded-[3px] bg-amber-400/10 text-amber-400 border border-amber-400/20">
+                    {seg.cabin === "PremiumEconomy" ? "PREM" : seg.cabin === "Business" ? "BIZ" : seg.cabin === "First" ? "FIRST" : String(seg.cabin).toUpperCase()}
+                  </span>
+                )}
                 <span className="text-[8px] text-slate-700 ml-auto">{seg.durationFormatted}</span>
                 {seg.stops === 0 ? (
                   <span className="text-[7px] text-emerald-600">Non</span>
@@ -1233,9 +1298,18 @@ function buildScenariosFromState(
           fareTerms: "fareTerms" in v ? (v as Variant).fareTerms : null,
           cabinClass: "cabin" in v ? ((v as any).cabin || "Economy") : "Economy",
           brandName: "brandName" in v ? ((v as Variant).brandName || "") : "",
-          flights: (segs as EnrichedSegment[]).map((seg) => {
+          flights: (segs as EnrichedSegment[]).map((seg, segIdx) => {
             const depISO = "departureTime" in seg ? seg.departureTime : "";
             const arrISO = "arrivalTime" in seg ? seg.arrivalTime : "";
+            // Use per-segment cabin from variant if available, else from segment itself
+            const segCabin = "cabins" in v && Array.isArray((v as any).cabins)
+              ? ((v as any).cabins[segIdx] || "Economy")
+              : ("cabin" in seg ? (seg as any).cabin || "Economy" : "Economy");
+            // Extract per-segment brand features for amenity display
+            const segBrand = "brand" in seg ? (seg as EnrichedSegment).brand : undefined;
+            const segFeatures = (segBrand?.features || [])
+              .filter((ft) => ft.application === "F" || ft.application === "C") // Free or Chargeable — skip "N" (not offered)
+              .map((ft) => ({ name: ft.name, free: ft.application === "F", group: ft.serviceGroup || "" }));
             return {
               flight: "flightNumber" in seg ? seg.flightNumber : "",
               route: `${"origin" in seg ? seg.origin : ""} → ${"destination" in seg ? seg.destination : ""}`,
@@ -1245,13 +1319,15 @@ function buildScenariosFromState(
               departISO: depISO,
               arriveISO: arrISO,
               duration: "durationFormatted" in seg ? seg.durationFormatted : "",
-              cabin: vLabel || "Economy",
+              cabin: segCabin,
               aircraft: "equipment" in seg ? seg.equipment : "",
               stops: "stops" in seg ? seg.stops : 0,
               operated:
                 "operatingCarrier" in seg && seg.operatingCarrier !== seg.marketingCarrier
                   ? seg.operatingCarrier
                   : null,
+              brand: segBrand?.name || "",
+              features: segFeatures,
             };
           }),
         };
@@ -1307,7 +1383,7 @@ function buildScenariosFromState(
     tagged.add(flexIdx);
   }
   const bizIdx = scenarios.findIndex(
-    (s, i) => !tagged.has(i) && /business|premiere|first/i.test(s.shortLabel)
+    (s, i) => !tagged.has(i) && /business|premiere|first|biz/i.test(s.shortLabel)
   );
   if (bizIdx > -1) {
     scenarios[bizIdx].tag = "Premium";
@@ -1343,6 +1419,14 @@ const AIRCRAFT_NAMES: Record<string, string> = {
   "752": "Boeing 757-200", "753": "Boeing 757-300",
   "CRJ": "Bombardier CRJ", "CR9": "Bombardier CRJ-900", "CR7": "Bombardier CRJ-700",
   "DH4": "Dash 8-Q400", "AT7": "ATR 72", "AT5": "ATR 42",
+  "73J": "Boeing 737-900ER", "73G": "Boeing 737-700", "73W": "Boeing 737-700 (Winglets)",
+  "781": "Boeing 787-10 Dreamliner", "782": "Boeing 787-8 Dreamliner",
+  "E7W": "Embraer E175", "E75L": "Embraer E175 (Long Range)", "E75S": "Embraer E175",
+  "ERJ": "Embraer ERJ-145", "ER4": "Embraer ERJ-145", "E45": "Embraer ERJ-145",
+  "32S": "Airbus A320 Family", "32A": "Airbus A320",
+  "32B": "Airbus A321", "744": "Boeing 747-400", "74H": "Boeing 747-8",
+  "M80": "McDonnell Douglas MD-80", "M88": "McDonnell Douglas MD-88",
+  "M90": "McDonnell Douglas MD-90", "717": "Boeing 717",
 };
 
 const CARRIER_FULL_NAMES: Record<string, string> = {
@@ -1439,7 +1523,10 @@ const AIRPORT_FULL_NAMES: Record<string, { city: string; name: string }> = {
 
 function airportDisplay(iata: string): string {
   const info = AIRPORT_FULL_NAMES[iata];
-  return info ? `${info.city} ${info.name} (${iata})` : iata;
+  if (!info) return iata;
+  // Avoid "Los Angeles Los Angeles International" — if name already starts with city, just show name
+  if (info.name.toLowerCase().startsWith(info.city.toLowerCase())) return `${info.name} (${iata})`;
+  return `${info.city} ${info.name} (${iata})`;
 }
 
 function airportCityIata(iata: string): string {
@@ -1449,7 +1536,36 @@ function airportCityIata(iata: string): string {
 
 function cabinDisplayName(cabin: string): string {
   if (cabin === "PremiumEconomy") return "Premium Economy";
+  // Handle mixed-cabin labels like "Business → Economy"
+  if (cabin.includes(" → ")) {
+    return cabin.split(" → ").map((c) => c.trim() === "PremiumEconomy" ? "Premium Econ" : c.trim() === "Business" ? "Biz" : c.trim() === "First" ? "First" : "Econ").join(" → ");
+  }
   return cabin;
+}
+
+// On US domestic flights, "First" and "Business" are the same product.
+// Normalize cabin class for comparison purposes.
+function normalizeCabinForComparison(cabin: string): string {
+  const c = cabin.toLowerCase();
+  if (c === "first" || c === "business") return "Premium";
+  if (c === "premiumeconomy") return "PremiumEconomy";
+  return cabin;
+}
+
+function parseDurationMins(dur: string): number {
+  const match = dur.match(/(\d+)h\s*(\d+)m/);
+  if (match) return parseInt(match[1]) * 60 + parseInt(match[2]);
+  const hMatch = dur.match(/(\d+)h/);
+  if (hMatch) return parseInt(hMatch[1]) * 60;
+  const mMatch = dur.match(/(\d+)m/);
+  if (mMatch) return parseInt(mMatch[1]);
+  return 0;
+}
+
+function formatDurationMins(totalMins: number): string {
+  const hrs = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  return `${hrs}h ${mins}m`;
 }
 
 function aircraftName(code: string): string {
@@ -1573,6 +1689,9 @@ function htmlFlightCard(f: Scenario["tickets"][0]["flights"][0], carrier: string
   const operatedNote = f.operated
     ? `<p style="margin:6px 0 0 0;${F}font-size:11px;color:#999999;font-style:italic;">Operated by ${carrierFullName(f.operated)}</p>`
     : "";
+  // Cabin badge — always show cabin class
+  const cabinLabel = f.cabin ? cabinDisplayName(f.cabin) : "Economy";
+  const cabinBadge = ` &middot; <span style="font-size:10px;letter-spacing:0.5px;color:#8b7355;font-weight:bold;">${cabinLabel}</span>`;
 
   return `<tr><td style="padding:0 48px 14px 48px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-left:3px solid #8b7355;background-color:#fafaf8;">
@@ -1580,7 +1699,7 @@ function htmlFlightCard(f: Scenario["tickets"][0]["flights"][0], carrier: string
 <p style="margin:0 0 4px 0;${F}font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#8b7355;">${fullDateFmt(f.departISO || "")}</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr><td style="${F}font-size:18px;font-weight:bold;color:#2c2c2c;padding-bottom:4px;">${f.route}</td>
-<td style="text-align:right;${F}font-size:13px;color:#555555;">${carrierFullName(f.flight?.slice(0, 2) || carrier)} &middot; ${f.flight}</td></tr>
+<td style="text-align:right;${F}font-size:13px;color:#555555;">${carrierFullName(f.flight?.slice(0, 2) || carrier)} &middot; ${f.flight}${cabinBadge}</td></tr>
 </table>
 <p style="margin:6px 0 0 0;${F}font-size:15px;color:#2c2c2c;">${departDisplay} &rarr; ${arriveDisplay}${plusDay ? `<span style="font-size:11px;color:#b45309;font-weight:bold;">${plusDay}</span>` : ""}</p>
 <p style="margin:4px 0 0 0;${F}font-size:12px;color:#888888;">${f.duration} &middot; ${stopsText}${acName ? ` &middot; ${acName}` : ""}</p>
@@ -1588,25 +1707,68 @@ ${operatedNote}
 </td></tr></table></td></tr>`;
 }
 
+/** Unified routing zone — all flights in one block with direction separators.
+ *  When showCabin is false (mixed cabin packages), omit cabin from flight lines
+ *  since the fare table handles per-direction cabin context. */
+function htmlRoundtripRoutingZone(
+  flights: Scenario["tickets"][0]["flights"],
+  carrier: string,
+  showCabin: boolean = true,
+): string {
+  if (flights.length === 0) return "";
+
+  // Detect midpoint — switch from outbound to return
+  const midIdx = flights.length === 2 ? 0 : Math.floor(flights.length / 2) - 1;
+
+  let segments = "";
+  flights.forEach((f, i) => {
+    const isFirst = i === 0;
+    const isReturn = i > midIdx;
+    const plusDay = dayDiff(f.departISO, f.arriveISO);
+    const arriveDisplay = timeFmt12(f.arriveISO) || f.arrive;
+    const departDisplay = timeFmt12(f.departISO) || f.depart;
+    const stopsText = f.stops === 0 ? "Nonstop" : `${f.stops} stop${f.stops > 1 ? "s" : ""}`;
+    const acName = f.aircraft ? aircraftName(f.aircraft) : "";
+    const operatedNote = f.operated
+      ? `<p style="margin:4px 0 0 0;${F}font-size:11px;color:#999999;font-style:italic;">Operated by ${carrierFullName(f.operated)}</p>`
+      : "";
+    const cabinLabel = showCabin ? (f.cabin ? cabinDisplayName(f.cabin) : "Economy") : "";
+
+    // Direction separator
+    if (isFirst) {
+      segments += `<tr><td style="padding:0 0 6px 0;">
+<p style="margin:0;${F}font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#8b7355;font-weight:bold;">Outbound &middot; ${fullDateFmt(f.departISO || "")}</p></td></tr>`;
+    }
+    if (isReturn && i === midIdx + 1) {
+      segments += `<tr><td style="padding:16px 0 6px 0;border-top:1px dashed #d0c9be;">
+<p style="margin:0;${F}font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#8b7355;font-weight:bold;">Return &middot; ${fullDateFmt(f.departISO || "")}</p></td></tr>`;
+    }
+
+    // Flight segment line
+    segments += `<tr><td style="padding:4px 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td style="${F}font-size:16px;font-weight:bold;color:#2c2c2c;width:50%;">${f.route}</td>
+${cabinLabel ? `<td style="text-align:right;${F}font-size:11px;color:#8b7355;font-weight:bold;">${cabinLabel}</td>` : ""}
+</tr></table>
+<p style="margin:4px 0 0 0;${F}font-size:14px;color:#2c2c2c;">${departDisplay} &rarr; ${arriveDisplay}${plusDay ? `<span style="font-size:11px;color:#b45309;font-weight:bold;"> ${plusDay}</span>` : ""}</p>
+<p style="margin:3px 0 0 0;${F}font-size:11px;color:#888888;">${carrierFullName(f.flight?.slice(0, 2) || carrier)} &middot; ${f.flight} &middot; ${f.duration} &middot; ${stopsText}${acName ? ` &middot; ${acName}` : ""}</p>
+${operatedNote}
+</td></tr>`;
+  });
+
+  return `<tr><td style="padding:0 48px 20px 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-left:3px solid #8b7355;background-color:#fafaf8;">
+<tr><td style="padding:24px 28px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+${segments}
+</table>
+</td></tr></table></td></tr>`;
+}
+
 function htmlFareTable(ticket: Scenario["tickets"][0]): string {
-  const ft = ticket.fareTerms;
-  const cabin = ticket.flights[0]?.cabin || "Economy";
-  const termsItems: string[] = [];
-
-  if (ft) {
-    termsItems.push(ft.refundSummary);
-    if (ft.changeSummary !== "No Changes") termsItems.push(ft.changeSummary);
-    if (ft.baggage) termsItems.push(ft.baggage);
-    if (ft.seatType) termsItems.push(ft.seatType);
-  } else {
-    termsItems.push(ticket.refundable ? "Refundable" : "Non-refundable");
-  }
-
-  const fareTermsHtml = termsItems.map((t) => {
-    const isGreen = /refundable|free|flex|included/i.test(t) && !/non-refundable/i.test(t);
-    const color = isGreen ? "#2e7d32" : "#555555";
-    return `<span style="${F}font-size:11px;color:${color};display:inline-block;margin-right:6px;margin-bottom:2px;">&#x2713; ${t}</span>`;
-  }).join("");
+  const packageName = buildPackageName(ticket);
+  const fareDetailsHtml = buildFareDetailsHtml(ticket);
 
   return `<tr><td style="padding:0 48px 20px 48px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e8e4de;">
@@ -1614,11 +1776,205 @@ function htmlFareTable(ticket: Scenario["tickets"][0]): string {
 <td style="background-color:#2c2c2c;padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;text-align:right;">Per Person</td></tr>
 <tr style="background-color:#ffffff;">
 <td style="padding:12px 14px;${F}border-bottom:1px solid #e8e4de;">
-<p style="margin:0 0 4px 0;${F}font-size:13px;color:#2c2c2c;font-weight:bold;">${cabin}</p>
-<p style="margin:0;line-height:1.7;">${fareTermsHtml}</p>
+<p style="margin:0 0 4px 0;${F}font-size:13px;color:#2c2c2c;font-weight:bold;">${packageName}</p>
+${fareDetailsHtml}
 </td>
 <td style="padding:12px 14px;${F}font-size:15px;color:#2c2c2c;font-weight:bold;text-align:right;vertical-align:top;border-bottom:1px solid #e8e4de;">${ticket.price}</td></tr>
 </table></td></tr>`;
+}
+
+/** Humanize raw Sabre brand feature names into client-friendly language. */
+function humanizeFeature(raw: string): string {
+  const map: Record<string, string> = {
+    "FIRST EXCESS BAG": "1 Checked Bag",
+    "1ST CHECKED BAG": "1 Checked Bag",
+    "SECOND EXCESS BAG": "2 Checked Bags",
+    "2ND CHECKED BAG": "2 Checked Bags",
+    "CHECKED BAG FIRST": "1 Checked Bag",
+    "CHECKED BAG SECOND": "2 Checked Bags",
+    "CARRY ON BAG": "Carry-On Bag",
+    "CARRY ON HAND BAGGAGE": "Carry-On Bag",
+    "PERSONAL ITEM": "Personal Item",
+    "LIE FLAT BED": "Lie-Flat Seat",
+    "LIE FLAT SEAT": "Lie-Flat Seat",
+    "LIE-FLAT SEAT": "Lie-Flat Seat",
+    "ADVANCE SEAT SELECTION": "Seat Selection",
+    "PREFERRED SEAT": "Preferred Seat",
+    "SEAT SELECTION": "Seat Selection",
+    "BASIC SEAT": "Standard Seat",
+    "STANDARD SEAT SELECTION": "Seat Selection",
+    "PREMIUM SEAT": "Premium Seat",
+    "EXTRA LEGROOM": "Extra Legroom",
+    "EXTRA LEG ROOM": "Extra Legroom",
+    "LOUNGE ACCESS": "Lounge Access",
+    "PRIORITY BOARDING": "Priority Boarding",
+    "PRIORITY CHECKIN": "Priority Check-In",
+    "PRIORITY CHECK IN": "Priority Check-In",
+    "DEDICATED CHECK IN ZONE": "Priority Check-In",
+    "WIFI": "Wi-Fi",
+    "INFLIGHT WIFI": "Wi-Fi",
+    "IN FLIGHT WIFI": "Wi-Fi",
+    "MEAL": "Meal Included",
+    "COMPLIMENTARY FOOD AND BEV": "Meals & Drinks",
+    "SNACK": "Snack",
+    "ALCOHOLIC BEVERAGES": "Drinks Included",
+    "NON ALCOHOLIC BEVERAGES": "Non-Alcoholic Drinks",
+    "FLAGSHIP CHECKIN": "Flagship Check-In",
+    "MAIN CABIN EXTRA": "Main Cabin Extra",
+    "PRE RESERVED SEATS": "Pre-Reserved Seat",
+    "MILEAGE ACCRUAL": "Miles Earning",
+    "AADVANTAGE MILES": "Miles Earning",
+    "CHANGEABLE TICKET": "Free Changes",
+    "UPGRADEABLE": "Upgrade Eligible",
+  };
+  const upper = raw.toUpperCase().trim();
+  if (map[upper]) return map[upper];
+  // Fallback: title case the raw name
+  return raw.replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\b(And|Or|Of|The|A)\b/g, (w) => w.toLowerCase());
+}
+
+/** Pick the most relevant features per flight for display — skip noise. */
+function pickNotableFeatures(features: { name: string; free: boolean; group: string }[]): string[] {
+  // Priority order: seat amenities, baggage, lounge, boarding, meals
+  const priority = ["SA", "BG", "LG", "ML", "TS", "IE", "FF", "UP"];
+  // Skip very generic / noisy features
+  const skipPatterns = /^(PERSONAL ITEM|CARRY ON|MILEAGE ACCRUAL|AADVANTAGE|BASIC SEAT|CHANGEABLE TICKET|NON REFUNDABLE|REFUNDABLE)$/i;
+
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  // Sort by priority group, then free before chargeable
+  const sorted = [...features].sort((a, b) => {
+    const ai = priority.indexOf(a.group);
+    const bi = priority.indexOf(b.group);
+    if (ai !== bi) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    return (a.free ? 0 : 1) - (b.free ? 0 : 1);
+  });
+
+  for (const f of sorted) {
+    if (skipPatterns.test(f.name.trim())) continue;
+    const humanized = humanizeFeature(f.name);
+    if (seen.has(humanized)) continue;
+    seen.add(humanized);
+    // Show free features as-is, chargeable as "(paid)"
+    result.push(f.free ? humanized : `${humanized} (paid)`);
+    if (result.length >= 4) break; // Cap at 4 per direction
+  }
+  return result;
+}
+
+/** Build fare details HTML — shows shared terms on one line, then per-direction amenities if they differ. */
+function buildFareDetailsHtml(ticket: Scenario["tickets"][0]): string {
+  const ft = ticket.fareTerms;
+  const flights = ticket.flights;
+
+  // Shared terms (refund, changes) — always show at top
+  const sharedItems: string[] = [];
+  if (ft) {
+    sharedItems.push(ft.refundSummary);
+    if (ft.changeSummary && ft.changeSummary !== "No Changes") sharedItems.push(ft.changeSummary);
+  } else {
+    sharedItems.push(ticket.refundable ? "Refundable" : "Non-refundable");
+  }
+
+  const termBadge = (t: string) => {
+    const isGreen = /refundable|free|flex|included/i.test(t) && !/non-refundable/i.test(t);
+    const isPaid = /\(paid\)/i.test(t);
+    const color = isPaid ? "#999999" : isGreen ? "#2e7d32" : "#555555";
+    return `<span style="${F}font-size:11px;color:${color};display:inline-block;margin-right:6px;margin-bottom:2px;">&#x2713; ${t}</span>`;
+  };
+
+  let html = `<p style="margin:0;line-height:1.7;">${sharedItems.map(termBadge).join("")}</p>`;
+
+  // Build per-flight amenity lists from brand features
+  const perFlightAmenities = flights.map((f: any) => {
+    if (f.features && f.features.length > 0) {
+      return pickNotableFeatures(f.features);
+    }
+    return [] as string[];
+  });
+
+  // Check if any per-flight data exists
+  const hasPerFlight = perFlightAmenities.some((items) => items.length > 0);
+
+  if (!hasPerFlight) {
+    // Fall back to ticket-level fare terms
+    const items: string[] = [];
+    if (ft?.baggage) items.push(ft.baggage);
+    if (ft?.seatType) items.push(ft.seatType);
+    if (items.length > 0) {
+      html += `<p style="margin:2px 0 0 0;line-height:1.7;">${items.map(termBadge).join("")}</p>`;
+    }
+    return html;
+  }
+
+  const allSameAmenities = perFlightAmenities.length <= 1 ||
+    perFlightAmenities.every((items) => items.join("|") === perFlightAmenities[0].join("|"));
+
+  if (allSameAmenities) {
+    // Same amenities on all flights — show as flat list
+    const items = perFlightAmenities[0] || [];
+    if (items.length > 0) {
+      html += `<p style="margin:2px 0 0 0;line-height:1.7;">${items.map(termBadge).join("")}</p>`;
+    }
+  } else {
+    // Different amenities per direction — show with direction labels
+    const dirLabels = flights.length === 2 ? ["Outbound", "Return"] : flights.map((f: any) => f.route || "");
+    flights.forEach((_f: any, i: number) => {
+      const items = perFlightAmenities[i];
+      if (items.length > 0) {
+        html += `<p style="margin:6px 0 0 0;${F}font-size:10px;color:#8b7355;font-weight:bold;letter-spacing:0.5px;">${dirLabels[i]}:</p>`;
+        html += `<p style="margin:1px 0 0 0;line-height:1.7;">${items.map(termBadge).join("")}</p>`;
+      }
+    });
+  }
+
+  return html;
+}
+
+/** Build a human-readable package name from per-flight brand+cabin data.
+ *  e.g. "MINT (Business) outbound · BLUE (Economy) return" or "MINT both ways" */
+function buildPackageName(ticket: Scenario["tickets"][0]): string {
+  const flights = ticket.flights;
+  if (flights.length <= 1) {
+    const f = flights[0];
+    const brand = ticket.brandName || "";
+    const cabin = f?.cabin ? cabinDisplayName(f.cabin) : "Economy";
+    // If brand already contains the cabin word, just return brand
+    if (brand && brand.toLowerCase().includes(cabin.toLowerCase())) return brand;
+    return brand ? `${brand} (${cabin})` : cabin;
+  }
+
+  // Multi-segment: build per-direction descriptions
+  const brandParts = (ticket.brandName || "").split(" + ");
+  const perFlight = flights.map((f, i) => {
+    const brand = brandParts[i]?.trim() || brandParts[0]?.trim() || "";
+    const cabin = f.cabin ? cabinDisplayName(f.cabin) : "Economy";
+    return { brand, cabin, route: f.route };
+  });
+
+  // Check if all the same brand+cabin
+  const allSameBrand = perFlight.every((pf) => pf.brand === perFlight[0].brand);
+  const allSameCabin = perFlight.every((pf) => pf.cabin === perFlight[0].cabin);
+
+  if (allSameBrand && allSameCabin) {
+    const pf = perFlight[0];
+    const label = pf.brand
+      ? (pf.brand.toLowerCase().includes(pf.cabin.toLowerCase()) ? pf.brand : `${pf.brand} (${pf.cabin})`)
+      : pf.cabin;
+    return flights.length === 2 ? `${label} both ways` : label;
+  }
+
+  // Different per direction — describe each with cabin parenthetical
+  const dirLabels = flights.length === 2 ? ["outbound", "return"] : flights.map((f) => f.route);
+  return perFlight.map((pf, i) => {
+    if (pf.brand) {
+      // If brand name already implies the cabin (e.g. "BUSINESS PROMO"), still add parenthetical
+      // for clarity since different legs have different cabins
+      return `${pf.brand} (${pf.cabin}) ${dirLabels[i]}`;
+    }
+    return `${pf.cabin} ${dirLabels[i]}`;
+  }).join(" · ");
 }
 
 function htmlTicketHeader(ticket: Scenario["tickets"][0]): string {
@@ -1629,9 +1985,12 @@ function htmlTicketHeader(ticket: Scenario["tickets"][0]): string {
 </table></td></tr>`;
 }
 
-function htmlMultiTicketDisclaimer(ticketCount: number): string {
+function htmlMultiTicketDisclaimer(ticketCount: number, isOneWay: boolean = false): string {
+  const text = isOneWay
+    ? `Each leg is booked as a separate one-way ticket with independent fare rules. Changes or cancellations on one leg do not affect the other.`
+    : `This itinerary comprises ${ticketCount} separate tickets. Missed connections between tickets are the passenger&rsquo;s responsibility. Luggage may require re-check between carriers.`;
   return `<tr><td style="padding:0 48px 16px 48px;">
-<p style="margin:0;${F}font-size:12px;color:#555555;font-style:italic;line-height:1.7;">This itinerary comprises ${ticketCount} separate tickets. Missed connections between tickets are the passenger&rsquo;s responsibility. Luggage may require re-check between carriers.</p></td></tr>`;
+<p style="margin:0;${F}font-size:12px;color:#555555;font-style:italic;line-height:1.7;">${text}</p></td></tr>`;
 }
 
 function htmlPricingSummary(sc: Scenario): string {
@@ -1652,9 +2011,12 @@ function htmlComparisonTable(scenarios: Scenario[]): string {
     const numStyle = sc.highlight
       ? `${F}font-size:12px;font-weight:bold;color:#8b7355;padding:9px 14px;background-color:${bg};border-bottom:1px solid #e8e4de;`
       : `${F}font-size:12px;color:#8b7355;padding:9px 14px;background-color:${bg};border-bottom:1px solid #e8e4de;`;
+    // Build cabin description for the comparison row
+    const ticket = sc.tickets[0];
+    const cabinDesc = ticket ? buildPackageName(ticket) : "";
     return `<tr>
 <td style="${numStyle}">${sc.highlight ? "&#9733;" : i + 1}</td>
-<td style="${F}font-size:12px;color:#2c2c2c;padding:9px 14px;background-color:${bg};border-bottom:1px solid #e8e4de;">${sc.label}</td>
+<td style="${F}font-size:12px;color:#2c2c2c;padding:9px 14px;background-color:${bg};border-bottom:1px solid #e8e4de;">${cabinDesc}</td>
 <td style="${F}font-size:12px;color:#2c2c2c;padding:9px 14px;background-color:${bg};border-bottom:1px solid #e8e4de;">${sc.tag}</td>
 <td style="${F}font-size:13px;color:#2c2c2c;font-weight:bold;padding:9px 14px;text-align:right;background-color:${bg};border-bottom:1px solid #e8e4de;">${sc.totalPrice}</td></tr>`;
   }).join("");
@@ -1665,7 +2027,7 @@ function htmlComparisonTable(scenarios: Scenario[]): string {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e8e4de;">
 <tr>
 <td style="background-color:#2c2c2c;padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;width:30px;"></td>
-<td style="background-color:#2c2c2c;padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;">Option</td>
+<td style="background-color:#2c2c2c;padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;">Package</td>
 <td style="background-color:#2c2c2c;padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;">Type</td>
 <td style="background-color:#2c2c2c;padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;text-align:right;">Per Person</td></tr>
 ${compRows}
@@ -1820,14 +2182,96 @@ function renderRoundtrip(scenarios: Scenario[], model: StrategyModel, copy: Prop
   const bodyNote = "Each option is a single ticket &mdash; one booking, one carrier relationship, full protection end to end.";
   let sections = "";
 
-  scenarios.forEach((sc, i) => {
-    if (i > 0) sections += htmlSectionDivider();
-    sections += htmlOptionHeader(sc.tag, sc.label, sc.totalPrice, sc.highlight, sc.rationale, sc.id);
-    sc.tickets.forEach((ticket) => {
-      ticket.flights.forEach((f) => { sections += htmlFlightCard(f, ticket.carrier); });
-      sections += htmlFareTable(ticket);
-    });
-    sections += htmlPricingSummary(sc);
+  // ── Group scenarios by physical routing ──
+  // Scenarios with the same flights (same flight numbers, same times) get one
+  // routing block with a multi-row fare table — instead of repeating the flight
+  // card for every fare tier.
+  interface RoutingGroup {
+    routingKey: string;
+    scenarios: Scenario[];
+    flights: Scenario["tickets"][0]["flights"];
+    carrier: string;
+  }
+
+  const routingGroups: RoutingGroup[] = [];
+  const routingMap = new Map<string, RoutingGroup>();
+
+  for (const sc of scenarios) {
+    // Build a key from all flight numbers + departure times (physical routing identity)
+    const allFlights = sc.tickets.flatMap((t) => t.flights);
+    const routingKey = allFlights
+      .map((f) => `${f.flight}-${f.departISO}`)
+      .join("|");
+
+    const existing = routingMap.get(routingKey);
+    if (existing) {
+      existing.scenarios.push(sc);
+    } else {
+      const group: RoutingGroup = {
+        routingKey,
+        scenarios: [sc],
+        flights: allFlights,
+        carrier: sc.tickets[0]?.carrier || "",
+      };
+      routingMap.set(routingKey, group);
+      routingGroups.push(group);
+    }
+  }
+
+  routingGroups.forEach((group, gi) => {
+    if (gi > 0) sections += htmlSectionDivider();
+
+    // Detect whether scenarios across this routing group have varying cabin combos
+    // If so, omit cabin from the routing zone — let the fare table show per-direction cabin
+    const hasMixedCabinPackages = (() => {
+      const cabinKeys = new Set<string>();
+      for (const sc of group.scenarios) {
+        const key = sc.tickets.flatMap((t) => t.flights.map((f) => f.cabin || "Economy")).join("|");
+        cabinKeys.add(key);
+      }
+      return cabinKeys.size > 1;
+    })();
+
+    if (group.scenarios.length === 1) {
+      // Single scenario for this routing
+      const sc = group.scenarios[0];
+      sections += htmlOptionHeader(sc.tag, sc.label, sc.totalPrice, sc.highlight, sc.rationale, sc.id);
+      const allFlights = sc.tickets.flatMap((t) => t.flights);
+      if (allFlights.length >= 2) {
+        sections += htmlRoundtripRoutingZone(allFlights, sc.tickets[0]?.carrier || "", true);
+      } else {
+        allFlights.forEach((f) => { sections += htmlFlightCard(f, sc.tickets[0]?.carrier || ""); });
+      }
+      sc.tickets.forEach((ticket) => {
+        sections += htmlFareTable(ticket);
+      });
+    } else {
+      // Multiple scenarios for the same routing
+      const primary = group.scenarios[0];
+      const optionLabel = `${primary.label}`;
+      const priceRange = group.scenarios.length > 1
+        ? `${group.scenarios[0].totalPrice} – ${group.scenarios[group.scenarios.length - 1].totalPrice}`
+        : primary.totalPrice;
+
+      sections += htmlOptionHeader(
+        primary.tag,
+        optionLabel,
+        priceRange,
+        primary.highlight,
+        primary.rationale,
+        primary.id
+      );
+
+      // Unified routing zone — omit cabin when packages have different cabin combos
+      if (group.flights.length >= 2) {
+        sections += htmlRoundtripRoutingZone(group.flights, group.carrier, !hasMixedCabinPackages);
+      } else {
+        group.flights.forEach((f) => { sections += htmlFlightCard(f, group.carrier); });
+      }
+
+      // Multi-row fare table — one row per fare tier
+      sections += htmlMultiFareTable(group.scenarios);
+    }
   });
 
   return wrapEmailShell(model, [
@@ -1843,6 +2287,33 @@ function renderRoundtrip(scenarios: Scenario[], model: StrategyModel, copy: Prop
     htmlBookingTerms(),
     htmlFooter(),
   ].join(""));
+}
+
+/** Render a multi-row fare table for grouped scenarios sharing the same physical routing. */
+function htmlMultiFareTable(scenarios: Scenario[]): string {
+  const rows = scenarios.map((sc) => {
+    const ticket = sc.tickets[0];
+    if (!ticket) return "";
+    const packageName = buildPackageName(ticket);
+    const fareDetailsHtml = buildFareDetailsHtml(ticket);
+
+    const isRefundable = ticket.refundable;
+    const rowBg = isRefundable ? "#f7fdf7" : "#ffffff";
+
+    return `<tr style="background-color:${rowBg};">
+<td style="padding:12px 14px;${F}border-bottom:1px solid #e8e4de;">
+<p style="margin:0 0 4px 0;${F}font-size:13px;color:#2c2c2c;font-weight:bold;">${packageName}</p>
+${fareDetailsHtml}
+</td>
+<td style="padding:12px 14px;${F}font-size:15px;color:#2c2c2c;font-weight:bold;text-align:right;vertical-align:top;border-bottom:1px solid #e8e4de;">${sc.totalPrice}</td></tr>`;
+  }).join("");
+
+  return `<tr><td style="padding:0 48px 20px 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e8e4de;">
+<tr><td style="background-color:#2c2c2c;padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;">Package &amp; Fare</td>
+<td style="background-color:#2c2c2c;padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;text-align:right;">Per Person</td></tr>
+${rows}
+</table></td></tr>`;
 }
 
 // ── One-Way Sub-Scenario Types & Helpers ─────────────────────────────────────
@@ -1963,14 +2434,22 @@ function extractOneWayLegs(scenarios: Scenario[]): OneWayLegData[] {
     const distinctCabins = [...allCabins];
 
     const numFlights = options.length;
-    const allSameCabin = options.every(
-      (opt) => opt.cabins.length === 1 && opt.cabins[0].cabinClass === options[0].cabins[0]?.cabinClass
+
+    // Every option has exactly 1 cabin? → Scenario 3 (compact table)
+    // Normalize First/Business as equivalent (same product on domestic)
+    const allSingleCabin = options.every((opt) => opt.cabins.length === 1);
+    const allSameCabin = allSingleCabin && options.every(
+      (opt) => normalizeCabinForComparison(opt.cabins[0].cabinClass) ===
+               normalizeCabinForComparison(options[0].cabins[0]?.cabinClass || "")
     );
 
+    // Count normalized distinct cabins
+    const normalizedCabins = new Set(distinctCabins.map(normalizeCabinForComparison));
+
     let scenario: 1 | 2 | 3 | 4;
-    if (numFlights === 1 && distinctCabins.length <= 1) scenario = 1;
-    else if (numFlights === 1 && distinctCabins.length > 1) scenario = 2;
-    else if (numFlights > 1 && allSameCabin) scenario = 3;
+    if (numFlights === 1 && normalizedCabins.size <= 1) scenario = 1;
+    else if (numFlights === 1 && normalizedCabins.size > 1) scenario = 2;
+    else if (numFlights > 1 && (allSameCabin || allSingleCabin)) scenario = 3;
     else scenario = 4;
 
     const totalLegs = legMap.size;
@@ -1985,79 +2464,87 @@ function extractOneWayLegs(scenarios: Scenario[]): OneWayLegData[] {
   return legs;
 }
 
-// ── One-Way Identity Bar (v6 style — dark bar with carrier, times, route) ──
+// ── One-Way Identity Bar (v7 style — matches roundtrip reference) ──
 
-function htmlOneWayIdentityBar(opt: OneWayFlightOption): string {
+function htmlOneWayIdentityBar(opt: OneWayFlightOption, legDate: string): string {
   const carrier = carrierFullName(opt.carrier);
-  const flightNums = opt.flights.map((f) => f.flight).join(" &rarr; ");
+  const flightNums = opt.flights.map((f) => f.flight).join(" &middot; ");
   const numStops = opt.flights.length - 1;
-  const stopsText = numStops === 0 ? "Nonstop" : `${numStops} Stop${numStops > 1 ? "s" : ""}`;
+  const stopsText = numStops === 0 ? "Nonstop" : `${numStops} stop${numStops > 1 ? "s" : ""}`;
 
   const firstFlight = opt.flights[0];
   const lastFlight = opt.flights[opt.flights.length - 1];
-  const departTime = timeFmt12(firstFlight.departISO);
-  const arriveTime = timeFmt12(lastFlight.arriveISO);
-  const plusDay = dayDiff(firstFlight.departISO, lastFlight.arriveISO);
-
-  const totalMs = new Date(lastFlight.arriveISO).getTime() - new Date(firstFlight.departISO).getTime();
-  const totalHrs = Math.floor(totalMs / (1000 * 60 * 60));
-  const totalMins = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60));
-  const totalDuration = `${totalHrs}h ${totalMins}m`;
 
   const departAirport = firstFlight.route.split(" \u2192 ")[0]?.trim() || "";
   const arriveAirport = lastFlight.route.split(" \u2192 ")[1]?.trim() || "";
 
-  const acNames = [...new Set(opt.flights.map((f) => aircraftName(f.aircraft)).filter(Boolean))];
-  const acText = acNames.length === 1
-    ? acNames[0] + (opt.flights.length > 1 ? " throughout" : "")
-    : acNames.join(" / ");
+  // Build connection via text for connecting flights
+  const viaAirports: string[] = [];
+  if (opt.flights.length > 1) {
+    for (let fi = 0; fi < opt.flights.length - 1; fi++) {
+      const arr = opt.flights[fi].route.split(" \u2192 ")[1]?.trim() || "";
+      if (arr) viaAirports.push(arr);
+    }
+  }
+  const viaText = viaAirports.length > 0 ? ` via ${viaAirports.map((a) => airportCityIata(a)).join(", ")}` : "";
+
+  // Short date from legDate (e.g. "Monday, July 13, 2026" → "Jul 13")
+  const shortDate = legDate ? legDate.replace(/^[A-Za-z]+,\s*/, "").replace(/,\s*\d{4}$/, "").trim() : "";
 
   return `<tr><td style="padding:0 48px 0 48px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#2c2c2c;">
 <tr><td style="padding:14px 20px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-<tr><td>
-<p style="margin:0 0 3px 0;${F}font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#8b7355;font-weight:bold;">Option ${opt.letter} &nbsp;&middot;&nbsp; ${stopsText}</p>
-<p style="margin:0 0 2px 0;${F}font-size:18px;font-weight:bold;color:#ffffff;">${carrier}</p>
-<p style="margin:0;${F}font-size:12px;color:#a8a8a8;">${flightNums}${acText ? ` &nbsp;&middot;&nbsp; ${acText}` : ""}</p>
+<tr>
+<td>
+<p style="margin:0 0 2px 0;${F}font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#8b7355;font-weight:bold;">Option ${opt.letter} &nbsp;&middot;&nbsp; ${stopsText}${viaText ? ` ${viaText}` : ""}</p>
+<p style="margin:0;${F}font-size:17px;font-weight:bold;color:#ffffff;">${carrier} &nbsp;<span style="font-weight:normal;font-size:14px;color:#a8a8a8;">${flightNums}</span></p>
 </td>
-<td style="text-align:right;vertical-align:top;">
-<p style="margin:0 0 3px 0;${F}font-size:22px;font-weight:bold;color:#ffffff;">${departTime} &rarr; ${arriveTime}${plusDay ? `<span style="font-size:12px;color:#b45309;font-weight:bold;">${plusDay}</span>` : ""}</p>
-<p style="margin:0 0 3px 0;${F}font-size:12px;color:#a8a8a8;">${totalDuration} total &nbsp;&middot;&nbsp; ${stopsText}</p>
-<p style="margin:0;${F}font-size:12px;font-weight:bold;color:#8b7355;">Departs ${airportCityIata(departAirport)} &nbsp;&middot;&nbsp; Arrives ${airportCityIata(arriveAirport)}</p>
-</td></tr></table></td></tr></table></td></tr>`;
+<td style="text-align:right;">
+<p style="margin:0 0 2px 0;${F}font-size:12px;color:#a8a8a8;">${shortDate}</p>
+<p style="margin:0;${F}font-size:12px;font-weight:bold;color:#8b7355;">${departAirport} &rarr; ${arriveAirport}</p>
+</td>
+</tr>
+</table></td></tr></table></td></tr>`;
 }
 
-// ── One-Way Routing Zone (v6 style — timeline dots with segments & layovers) ──
+// ── One-Way Routing Zone (v7 style — 3-column layout matching roundtrip reference) ──
 
 function htmlOneWayRoutingZone(opt: OneWayFlightOption): string {
   let html = `<tr><td style="padding:0 48px 0 48px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e0dbd4;border-top:0;border-bottom:0;background-color:#fafaf8;">`;
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e0dbd4;border-top:0;border-bottom:0;background-color:#fafaf8;">
+<tr><td style="padding:18px 22px 4px 22px;">`;
 
   opt.flights.forEach((f, fi) => {
-    const isFirst = fi === 0;
     const isLast = fi === opt.flights.length - 1;
     const departAirport = f.route.split(" \u2192 ")[0]?.trim() || "";
     const arriveAirport = f.route.split(" \u2192 ")[1]?.trim() || "";
     const acName = aircraftName(f.aircraft);
+    const plusDay = dayDiff(f.departISO, f.arriveISO);
+    const stopsText = "Nonstop"; // Per-segment is always nonstop
+    const cabinLabel = f.cabin ? cabinDisplayName(f.cabin) : "";
 
-    // Segment block with timeline dots
-    html += `<tr><td style="padding:${isFirst ? "16" : "14"}px 20px ${isLast ? "16" : "14"}px 20px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-<tr><td style="vertical-align:top;width:16px;padding-top:4px;">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0">
-<tr><td style="width:8px;height:8px;border-radius:50%;background-color:#8b7355;">&nbsp;</td></tr>
-<tr><td align="center"><div style="width:1px;height:28px;background-color:#d0c9be;margin:2px auto;">&nbsp;</div></td></tr>
-<tr><td style="width:8px;height:8px;border-radius:50%;background-color:#8b7355;">&nbsp;</td></tr>
-</table></td>
+    // Segment block: 3 columns — timeline dots | details | duration
+    html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td style="width:20px;vertical-align:top;padding-top:3px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:20px;">
+<tr><td align="center"><div style="width:9px;height:9px;border-radius:50%;background-color:#8b7355;margin:0 auto;">&nbsp;</div></td></tr>
+<tr><td align="center"><div style="width:1px;height:36px;background-color:#c8bfb4;margin:2px auto;">&nbsp;</div></td></tr>
+<tr><td align="center"><div style="width:9px;height:9px;border-radius:50%;background-color:#8b7355;margin:0 auto;">&nbsp;</div></td></tr>
+</table>
+</td>
 <td style="padding-left:14px;vertical-align:top;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-<tr><td>
 <p style="margin:0 0 1px 0;${F}font-size:15px;font-weight:bold;color:#2c2c2c;">${timeFmt12(f.departISO)} &nbsp;&middot;&nbsp; ${airportDisplay(departAirport)}</p>
-<p style="margin:0 0 10px 0;${F}font-size:11px;color:#888888;">Travel time: ${f.duration} &nbsp;&middot;&nbsp; ${f.flight}${acName ? ` &nbsp;&middot;&nbsp; ${acName}` : ""}</p>
-<p style="margin:0;${F}font-size:15px;font-weight:bold;color:#2c2c2c;">${timeFmt12(f.arriveISO)} &nbsp;&middot;&nbsp; ${airportDisplay(arriveAirport)}</p>
-</td></tr></table>
-</td></tr></table></td></tr>`;
+<p style="margin:0 0 24px 0;${F}font-size:11px;color:#888888;">${f.flight}${acName ? ` &nbsp;&middot;&nbsp; ${acName}` : ""}${cabinLabel ? ` &nbsp;&middot;&nbsp; ${cabinLabel}` : ""}</p>
+<p style="margin:0;${F}font-size:15px;font-weight:bold;color:#2c2c2c;">${timeFmt12(f.arriveISO)}${plusDay ? `<span style="font-size:10px;color:#b45309;font-weight:bold;">${plusDay}</span>` : ""} &nbsp;&middot;&nbsp; ${airportDisplay(arriveAirport)}</p>
+</td>
+<td style="text-align:right;vertical-align:middle;padding-bottom:6px;">
+<p style="margin:0 0 2px 0;${F}font-size:13px;font-weight:bold;color:#2c2c2c;">${f.duration}</p>
+<p style="margin:0;${F}font-size:11px;color:#888888;">${stopsText}</p>
+</td>
+</tr>
+</table>`;
 
     // Layover bar between segments
     if (!isLast) {
@@ -2070,65 +2557,87 @@ function htmlOneWayRoutingZone(opt: OneWayFlightOption): string {
       const layoverCity = airportDisplay(arriveAirport);
 
       // Tight connection check (domestic ≤60min, international ≤90min)
-      const isDomestic = departAirport.length === 3 && arriveAirport.length === 3; // simplified
+      const isDomestic = departAirport.length === 3 && arriveAirport.length === 3;
       const tightThreshold = isDomestic ? 60 : 90;
       const isTight = layoverMins <= tightThreshold;
 
-      html += `<tr><td style="padding:0 20px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px dashed #d0c9be;border-bottom:1px dashed #d0c9be;">
-<tr><td style="padding:10px 0${isTight ? " 6px 0" : ""};">
+      html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:10px 0 10px 34px;border-top:1px dashed #d0c9be;border-bottom:1px dashed #d0c9be;">
+<tr><td style="padding:8px 0${isTight ? " 4px 0" : ""};">
 <p style="margin:0;${F}font-size:12px;color:#555555;"><strong style="color:#2c2c2c;">${layoverText} layover</strong> &nbsp;&middot;&nbsp; ${layoverCity}</p>
 </td></tr>`;
 
       if (isTight) {
-        html += `<tr><td style="padding:0 0 10px 0;">
+        html += `<tr><td style="padding:0 0 8px 0;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fff9f0;border:1px solid #e8dcc8;">
 <tr><td style="padding:8px 12px;">
-<p style="margin:0;${F}font-size:11px;color:#b45309;line-height:1.6;"><strong>Tight connection.</strong> ${layoverText} is ${layoverMins <= tightThreshold ? "at" : "below"} the minimum connection time at ${airportDisplay(arriveAirport)}. If the inbound flight is delayed, onward rebooking may be needed. ${carrierFullName(opt.carrier)} will rebook automatically if the connection is missed, provided both flights are on the same ticket.</p>
+<p style="margin:0;${F}font-size:11px;color:#b45309;line-height:1.6;"><strong>Tight connection.</strong> ${layoverText} is at the minimum connection time at ${airportDisplay(arriveAirport)}. If the inbound flight is delayed, onward rebooking may be needed. ${carrierFullName(opt.carrier)} will rebook automatically if the connection is missed, provided both flights are on the same ticket.</p>
 </td></tr></table></td></tr>`;
       }
 
-      html += `</table></td></tr>`;
+      html += `</table>`;
     }
   });
 
-  html += `</table></td></tr>`;
+  html += `
+</td></tr>
+</table></td></tr>`;
   return html;
 }
 
-// ── One-Way Cabin Columns (v6 style — side-by-side cabin columns with fare tiers) ──
+// ── One-Way Cabin Columns (v7 style — side-by-side cabin columns with fare tier rows) ──
 
 function htmlOneWayCabinColumns(opt: OneWayFlightOption, bottomPadding: string = "32px"): string {
   const numCabins = opt.cabins.length;
   if (numCabins === 0) return "";
+
+  // Single cabin → use row-based layout (like roundtrip reference fare table)
+  if (numCabins === 1) {
+    return htmlOneWaySingleCabinFareTable(opt, bottomPadding);
+  }
+
+  // Multi-cabin → column layout
   const colWidth = Math.floor(100 / numCabins);
 
-  // Column headers
+  // Column headers with "per person, one-way" annotation
   let headerCells = "";
   opt.cabins.forEach((cab, ci) => {
     const isLast = ci === numCabins - 1;
-    headerCells += `<td width="${colWidth}%" style="padding:11px 16px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#888888;${!isLast ? "border-right:1px solid #e0dbd4;" : ""}border-bottom:2px solid #e0dbd4;background-color:#f5f4f1;">${cabinDisplayName(cab.cabinClass)}</td>`;
+    headerCells += `<td width="${colWidth}%" style="padding:11px 16px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#888888;${!isLast ? "border-right:1px solid #e0dbd4;" : ""}border-bottom:1px solid #e0dbd4;background-color:#f5f4f1;">${cabinDisplayName(cab.cabinClass)} &nbsp;&middot;&nbsp; <span style="letter-spacing:0.5px;">per person</span></td>`;
   });
 
-  // Fare tier cells
-  let tierCells = "";
-  opt.cabins.forEach((cab, ci) => {
-    const isLast = ci === numCabins - 1;
-    let cellHtml = "";
+  // Build rows: each row is one fare tier across all cabins
+  const maxTiers = Math.max(...opt.cabins.map((c) => c.tiers.length));
+  let tierRows = "";
 
-    cab.tiers.forEach((tier, ti) => {
-      const isFirstTier = ti === 0;
-      const isRef = tier.refundable;
-      const tierColor = isRef ? "#2e7d32" : "#888888";
-      const priceColor = isRef ? "#2e7d32" : "#2c2c2c";
+  for (let ti = 0; ti < maxTiers; ti++) {
+    let rowCells = "";
+    // Determine if any cabin's tier at this index is refundable (for row background)
+    const anyRef = opt.cabins.some((cab) => cab.tiers[ti]?.refundable);
+    const rowBg = anyRef ? "#f7fdf7" : "#ffffff";
 
-      if (!isFirstTier) {
-        cellHtml += `<p style="margin:0 0 2px 0;${F}font-size:11px;color:${tierColor};text-transform:uppercase;letter-spacing:0.5px;${isRef ? "font-weight:bold;" : ""}border-top:1px solid #e8e4de;padding-top:12px;">${tier.tierLabel}</p>`;
-      } else {
-        cellHtml += `<p style="margin:0 0 2px 0;${F}font-size:11px;color:${tierColor};text-transform:uppercase;letter-spacing:0.5px;${isRef ? "font-weight:bold;" : ""}">${tier.tierLabel}</p>`;
+    opt.cabins.forEach((cab, ci) => {
+      const isLast = ci === numCabins - 1;
+      const tier = cab.tiers[ti];
+      const isLastRow = ti === maxTiers - 1;
+      const borderBottom = isLastRow ? "" : "border-bottom:1px solid #e0dbd4;";
+
+      if (!tier) {
+        rowCells += `<td style="padding:14px 16px;${!isLast ? "border-right:1px solid #e0dbd4;" : ""}${borderBottom}vertical-align:top;">&nbsp;</td>`;
+        return;
       }
 
-      cellHtml += `<p style="margin:0 0 8px 0;${F}font-size:20px;font-weight:bold;color:${priceColor};">${tier.priceStr}</p>`;
+      const isRef = tier.refundable;
+      const nameColor = isRef ? "#2e7d32" : "#2c2c2c";
+      const priceColor = isRef ? "#2e7d32" : "#2c2c2c";
+
+      let cellHtml = "";
+      cellHtml += `<p style="margin:0 0 2px 0;${F}font-size:13px;font-weight:bold;color:${nameColor};">${tier.tierLabel}${isRef ? " &nbsp;&middot;&nbsp; Flex" : ""}</p>`;
+
+      // Refundability subtitle
+      cellHtml += `<p style="margin:0 0 8px 0;${F}font-size:11px;color:#888888;">${isRef ? "Fully refundable" : "Non-refundable"}</p>`;
+
+      // Price
+      cellHtml += `<p style="margin:0 0 6px 0;${F}font-size:20px;font-weight:bold;color:${priceColor};">${tier.priceStr}</p>`;
 
       // Fare rules
       if (tier.fareTerms) {
@@ -2146,23 +2655,82 @@ function htmlOneWayCabinColumns(opt: OneWayFlightOption, bottomPadding: string =
         if (ft.seatType) {
           cellHtml += `<p style="margin:0 0 2px 0;${F}font-size:11px;color:#555555;">${ft.seatType}</p>`;
         }
-        if (isRef) {
-          cellHtml += `<p style="margin:0 0 ${ti < cab.tiers.length - 1 ? "12" : "0"}px 0;${F}font-size:11px;color:#2e7d32;">Fully refundable</p>`;
-        }
-      } else {
-        cellHtml += `<p style="margin:0;${F}font-size:11px;color:${isRef ? "#2e7d32" : "#555555"};">${isRef ? "Refundable" : "Non-refundable"}</p>`;
       }
+
+      rowCells += `<td style="padding:14px 16px;${!isLast ? "border-right:1px solid #e0dbd4;" : ""}${borderBottom}vertical-align:top;">${cellHtml}</td>`;
     });
 
-    const bgColor = ci > 0 ? "background-color:#fdfcfb;" : "";
-    tierCells += `<td style="padding:16px;${!isLast ? "border-right:1px solid #e0dbd4;" : ""}vertical-align:top;${bgColor}">${cellHtml}</td>`;
-  });
+    tierRows += `<tr style="background-color:${rowBg};">${rowCells}</tr>`;
+  }
 
   return `<tr><td style="padding:0 48px ${bottomPadding} 48px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e0dbd4;border-top:0;border-collapse:collapse;">
 <tr>${headerCells}</tr>
-<tr style="vertical-align:top;">${tierCells}</tr>
+${tierRows}
 </table></td></tr>`;
+}
+
+// ── One-Way Single Cabin Fare Table (row-based, matching roundtrip reference style) ──
+
+function htmlOneWaySingleCabinFareTable(opt: OneWayFlightOption, bottomPadding: string = "32px"): string {
+  const cab = opt.cabins[0];
+  if (!cab) return "";
+
+  // Build column header: "Cabin · per person, one-way · amenities"
+  const amenities: string[] = [];
+  const firstTier = cab.tiers[0];
+  if (firstTier?.fareTerms?.seatType) amenities.push(firstTier.fareTerms.seatType);
+  if (firstTier?.fareTerms?.baggage) amenities.push(firstTier.fareTerms.baggage);
+  const amenityText = amenities.length > 0 ? ` &middot; ${amenities.join(" &middot; ")}` : "";
+
+  let html = `<tr><td style="padding:0 48px ${bottomPadding} 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e0dbd4;border-top:0;border-collapse:collapse;">
+
+<tr style="background-color:#f5f4f1;">
+<td colspan="3" style="padding:9px 16px 6px 16px;${F}font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:#888888;border-bottom:1px solid #e0dbd4;">
+${cabinDisplayName(cab.cabinClass)} &nbsp;&middot;&nbsp; per person, one-way${amenityText}
+</td>
+</tr>
+
+<tr style="background-color:#fafaf8;">
+<td style="padding:8px 16px;width:44%;border-right:1px solid #e0dbd4;border-bottom:1px solid #e0dbd4;"></td>
+<td style="padding:8px 16px;${F}font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#888888;border-right:1px solid #e0dbd4;border-bottom:1px solid #e0dbd4;text-align:center;">Changes</td>
+<td style="padding:8px 16px;${F}font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#888888;border-bottom:1px solid #e0dbd4;text-align:right;">Price</td>
+</tr>`;
+
+  cab.tiers.forEach((tier, ti) => {
+    const isRef = tier.refundable;
+    const isLast = ti === cab.tiers.length - 1;
+    const rowBg = isRef ? "#f7fdf7" : "#ffffff";
+    const nameColor = isRef ? "#2e7d32" : "#2c2c2c";
+    const priceColor = isRef ? "#2e7d32" : "#2c2c2c";
+    const borderBottom = isLast ? "" : "border-bottom:1px solid #e0dbd4;";
+
+    // Package name + subtitle
+    const packageName = isRef ? `${tier.tierLabel} &nbsp;&middot;&nbsp; Flex` : tier.tierLabel;
+    const subtitle = isRef ? "Full refund to original payment" : "No refund if cancelled";
+
+    // Change info
+    let changeText = "&mdash;";
+    if (tier.fareTerms) {
+      if (tier.fareTerms.changePolicy === "free") changeText = "Free";
+      else if (tier.fareTerms.changePolicy === "fee") changeText = tier.fareTerms.changeSummary || "Fee applies";
+      else if (tier.fareTerms.changePolicy === "none") changeText = "Not permitted";
+      else if (tier.fareTerms.changeSummary && tier.fareTerms.changeSummary !== "No Changes") changeText = tier.fareTerms.changeSummary;
+    }
+
+    html += `<tr style="background-color:${rowBg};">
+<td style="padding:14px 16px;border-right:1px solid #e0dbd4;${borderBottom}vertical-align:top;">
+<p style="margin:0 0 2px 0;${F}font-size:13px;font-weight:bold;color:${nameColor};">${packageName}</p>
+<p style="margin:0;${F}font-size:11px;color:#888888;">${subtitle}</p>
+</td>
+<td style="padding:14px 16px;${F}font-size:12px;color:#555555;border-right:1px solid #e0dbd4;${borderBottom}vertical-align:top;text-align:center;">${changeText}</td>
+<td style="padding:14px 16px;${F}font-size:20px;font-weight:bold;color:${priceColor};text-align:right;${borderBottom}vertical-align:top;">${tier.priceStr}</td>
+</tr>`;
+  });
+
+  html += `</table></td></tr>`;
+  return html;
 }
 
 // ── One-Way Compact Table (v3 style — Scenario 3: multiple flights, same cabin) ──
@@ -2209,10 +2777,12 @@ function htmlOneWayCompactTable(leg: OneWayLegData): string {
     const arriveTime = timeFmt12(lastFlight.arriveISO);
     const plusDay = dayDiff(firstFlight.departISO, lastFlight.arriveISO);
 
-    const totalMs = new Date(lastFlight.arriveISO).getTime() - new Date(firstFlight.departISO).getTime();
-    const totalHrs = Math.floor(totalMs / (1000 * 60 * 60));
-    const totalMins = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60));
-    const totalDuration = `${totalHrs}h ${totalMins}m`;
+    let totalDurMins2 = opt.flights.reduce((s: number, f: typeof opt.flights[0]) => s + parseDurationMins(f.duration), 0);
+    for (let _fi2 = 0; _fi2 < opt.flights.length - 1; _fi2++) {
+      const layMs2 = new Date(opt.flights[_fi2 + 1].departISO).getTime() - new Date(opt.flights[_fi2].arriveISO).getTime();
+      if (layMs2 > 0) totalDurMins2 += Math.floor(layMs2 / (1000 * 60));
+    }
+    const totalDuration = formatDurationMins(totalDurMins2);
 
     const carrier = carrierFullName(opt.carrier);
     const flightNums = opt.flights.map((f) => f.flight).join(" + ");
@@ -2407,10 +2977,13 @@ function htmlOneWayQuickReference(legs: OneWayLegData[]): string {
       const departAirport = firstFlight.route.split(" \u2192 ")[0]?.trim() || "";
       const arriveAirport = lastFlight.route.split(" \u2192 ")[1]?.trim() || "";
 
-      const totalMs = new Date(lastFlight.arriveISO).getTime() - new Date(firstFlight.departISO).getTime();
-      const totalHrs = Math.floor(totalMs / (1000 * 60 * 60));
-      const totalMins = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60));
-      const totalDuration = `${totalHrs}h ${totalMins}m`;
+      // Use segment durations (timezone-safe) instead of timestamp subtraction
+      let totalDurMinsQR = opt.flights.reduce((s2: number, f2: typeof opt.flights[0]) => s2 + parseDurationMins(f2.duration), 0);
+      for (let _fi3 = 0; _fi3 < opt.flights.length - 1; _fi3++) {
+        const layMs3 = new Date(opt.flights[_fi3 + 1].departISO).getTime() - new Date(opt.flights[_fi3].arriveISO).getTime();
+        if (layMs3 > 0) totalDurMinsQR += Math.floor(layMs3 / (1000 * 60));
+      }
+      const totalDuration = formatDurationMins(totalDurMinsQR);
 
       const carrier = carrierFullName(opt.carrier);
       const nonRefTier = opt.cabins.flatMap((c) => c.tiers).find((t) => !t.refundable);
@@ -2487,7 +3060,7 @@ function renderOneWay(scenarios: Scenario[], model: StrategyModel, copy: Proposa
       sections += htmlFareTable(ticket);
     });
 
-    sections += htmlMultiTicketDisclaimer(sc.tickets.length);
+    sections += htmlMultiTicketDisclaimer(sc.tickets.length, true);
     sections += htmlPricingSummary(sc);
 
     return wrapEmailShell(model, [
@@ -2544,7 +3117,7 @@ function renderOneWay(scenarios: Scenario[], model: StrategyModel, copy: Proposa
     } else {
       // Scenarios 1, 2, 4: Block layout (v6 style) — identity bar + routing zone + cabin columns
       for (const opt of leg.options) {
-        sections += htmlOneWayIdentityBar(opt);
+        sections += htmlOneWayIdentityBar(opt, leg.date);
         sections += htmlOneWayRoutingZone(opt);
         const isLastOpt = leg.options.indexOf(opt) === leg.options.length - 1;
         sections += htmlOneWayCabinColumns(opt, isLastOpt ? "36px" : "32px");
@@ -2567,7 +3140,7 @@ function renderOneWay(scenarios: Scenario[], model: StrategyModel, copy: Proposa
   sections += htmlOneWayHowToReply(legs);
 
   // Multi-ticket disclaimer
-  sections += htmlMultiTicketDisclaimer(legs.length);
+  sections += htmlMultiTicketDisclaimer(legs.length, true);
 
   return wrapEmailShell(model, [
     htmlHeader(model),
@@ -2583,40 +3156,650 @@ function renderOneWay(scenarios: Scenario[], model: StrategyModel, copy: Proposa
   ].join(""));
 }
 
+// ── Multi-Strategy Data Extraction ────────────────────────────────────────────
+
+interface MsTicketOption {
+  flightKey: string;      // Unique routing key (flight numbers joined)
+  carrier: string;
+  carriers: string[];     // All unique carrier codes
+  flights: Scenario["tickets"][0]["flights"];
+  fares: {
+    cabinClass: string;
+    brandName: string;
+    price: number;
+    priceStr: string;
+    refundable: boolean;
+    fareTerms: FareTerms | null;
+  }[];
+}
+
+interface MsTicketGroup {
+  ticketLabel: string;    // "Ticket 1 of 2"
+  ticketIdx: number;
+  coverage: string;       // "JFK → MXP · CDG → JFK"
+  isRoundtrip: boolean;   // True if coverage contains · (multi-segment)
+  options: MsTicketOption[];
+}
+
+function extractMsTicketGroups(scenarios: Scenario[]): MsTicketGroup[] {
+  // Group by ticket label, then by unique routing within each ticket
+  const ticketMap = new Map<string, { coverage: string; routingMap: Map<string, MsTicketOption> }>();
+  const ticketOrder: string[] = [];
+
+  for (const sc of scenarios) {
+    for (const ticket of sc.tickets) {
+      if (!ticketMap.has(ticket.ticketLabel)) {
+        ticketMap.set(ticket.ticketLabel, { coverage: ticket.coverage, routingMap: new Map() });
+        ticketOrder.push(ticket.ticketLabel);
+      }
+      const group = ticketMap.get(ticket.ticketLabel)!;
+      const flightKey = ticket.flights.map((f) => f.flight).join("+");
+
+      if (!group.routingMap.has(flightKey)) {
+        group.routingMap.set(flightKey, {
+          flightKey,
+          carrier: ticket.carrier,
+          carriers: [ticket.carrier],
+          flights: ticket.flights,
+          fares: [],
+        });
+      }
+
+      const opt = group.routingMap.get(flightKey)!;
+      if (!opt.carriers.includes(ticket.carrier)) opt.carriers.push(ticket.carrier);
+
+      // Dedupe fares by cabin+price+refundability
+      const fareKey = `${ticket.cabinClass}_${ticket.price}_${ticket.refundable}`;
+      if (!opt.fares.some((f) => `${f.cabinClass}_${f.priceStr}_${f.refundable}` === fareKey)) {
+        opt.fares.push({
+          cabinClass: ticket.cabinClass,
+          brandName: ticket.brandName,
+          price: parseFloat(ticket.price.replace(/[^0-9.]/g, "")),
+          priceStr: ticket.price,
+          refundable: ticket.refundable,
+          fareTerms: ticket.fareTerms,
+        });
+      }
+    }
+  }
+
+  return ticketOrder.map((label, idx) => {
+    const group = ticketMap.get(label)!;
+    const options = Array.from(group.routingMap.values());
+    options.forEach((opt) => opt.fares.sort((a, b) => a.price - b.price));
+    options.sort((a, b) => Math.min(...a.fares.map((f) => f.price)) - Math.min(...b.fares.map((f) => f.price)));
+    const isRoundtrip = group.coverage.includes("·") || group.coverage.includes("↔") || group.coverage.includes("harr");
+    return { ticketLabel: label, ticketIdx: idx, coverage: group.coverage, isRoundtrip, options };
+  });
+}
+
+// ── Multi-Strategy: Trip Architecture Block ──────────────────────────────────
+
+function htmlTripArchitectureBlock(ticketGroups: MsTicketGroup[], model: StrategyModel): string {
+  // Extract city sequence from all tickets in order
+  interface CityNode { name: string; iata: string; date: string; }
+  interface LegArrow { ticketIdx: number; ticketLabel: string; isSolid: boolean; }
+
+  const cities: CityNode[] = [];
+  const arrows: LegArrow[] = [];
+
+  for (const tg of ticketGroups) {
+    const firstOpt = tg.options[0];
+    if (!firstOpt) continue;
+
+    for (let fi = 0; fi < firstOpt.flights.length; fi++) {
+      const f = firstOpt.flights[fi];
+      const depIata = f.route.split(" \u2192 ")[0]?.trim() || "";
+      const arrIata = f.route.split(" \u2192 ")[1]?.trim() || "";
+
+      // Add departure city if not already the last city
+      if (cities.length === 0 || cities[cities.length - 1].iata !== depIata) {
+        cities.push({ name: airportCityIata(depIata).replace(` (${depIata})`, ""), iata: depIata, date: f.date });
+      }
+
+      // Arrow
+      const isSolid = tg.ticketIdx === 0; // Ticket 1 = solid, others = dashed
+      arrows.push({ ticketIdx: tg.ticketIdx, ticketLabel: tg.ticketLabel.replace(/ of \d+/, ""), isSolid });
+
+      // Add arrival city
+      cities.push({ name: airportCityIata(arrIata).replace(` (${arrIata})`, ""), iata: arrIata, date: f.date });
+    }
+  }
+
+  if (cities.length < 2) return "";
+
+  // Deduplicate consecutive same-city entries (keep last to get latest date)
+  const dedupedCities: CityNode[] = [cities[0]];
+  const dedupedArrows: LegArrow[] = [];
+  let arrowIdx = 0;
+  for (let ci = 1; ci < cities.length; ci++) {
+    if (cities[ci].iata === dedupedCities[dedupedCities.length - 1].iata) {
+      dedupedCities[dedupedCities.length - 1] = cities[ci]; // Update date
+    } else {
+      if (arrowIdx < arrows.length) dedupedArrows.push(arrows[arrowIdx]);
+      dedupedCities.push(cities[ci]);
+    }
+    arrowIdx++;
+  }
+
+  const numCols = dedupedCities.length + dedupedArrows.length;
+  const cityWidth = Math.floor(60 / dedupedCities.length);
+  const arrowWidth = Math.floor(40 / Math.max(dedupedArrows.length, 1));
+
+  let mapCells = "";
+  for (let ci = 0; ci < dedupedCities.length; ci++) {
+    const c = dedupedCities[ci];
+    mapCells += `<td style="text-align:center;width:${cityWidth}%;">
+<p style="margin:0 0 4px 0;${F}font-size:13px;font-weight:bold;color:#2c2c2c;">${c.name}</p>
+<p style="margin:0;${F}font-size:10px;color:#8b7355;font-weight:bold;">${c.iata}</p>
+<p style="margin:4px 0 0 0;${F}font-size:9px;color:#888888;">${c.date}</p>
+</td>`;
+
+    // Arrow after city (if not last)
+    if (ci < dedupedArrows.length) {
+      const a = dedupedArrows[ci];
+      const lineColor = a.isSolid ? "#8b7355" : "#aaaaaa";
+      const lineStyle = a.isSolid ? "solid" : "dashed";
+      const labelColor = a.isSolid ? "#8b7355" : "#555555";
+
+      mapCells += `<td style="text-align:center;width:${arrowWidth}%;vertical-align:middle;">
+<p style="margin:0 0 3px 0;${F}font-size:9px;color:${labelColor};font-weight:bold;letter-spacing:1px;text-transform:uppercase;">${a.ticketLabel}</p>
+<div style="border-top:2px ${lineStyle} ${lineColor};position:relative;height:2px;">
+<span style="${F}font-size:11px;color:${lineColor};position:absolute;right:-4px;top:-8px;">&rarr;</span>
+</div>
+</td>`;
+    }
+  }
+
+  // Ticket legend
+  let legendCells = "";
+  for (let ti = 0; ti < ticketGroups.length; ti++) {
+    const tg = ticketGroups[ti];
+    const isSolid = ti === 0;
+    const lineSymbol = isSolid
+      ? `<span style="color:#8b7355;">&#9135;&#9135;</span>`
+      : `<span style="color:#aaa;">- - -</span>`;
+    const typeLabel = tg.isRoundtrip ? "Open-jaw roundtrip" : "Internal one-way";
+    const borderLeft = ti > 0 ? "border-left:1px solid #e8e4de;padding-left:12px;" : "padding-right:12px;";
+
+    legendCells += `<td style="width:${Math.floor(100 / ticketGroups.length)}%;${borderLeft}vertical-align:top;">
+<p style="margin:0 0 3px 0;${F}font-size:11px;font-weight:bold;color:#2c2c2c;">${lineSymbol}&ensp;${tg.ticketLabel.replace(/ of \d+/, "")} &mdash; ${typeLabel}</p>
+<p style="margin:0;${F}font-size:11px;color:#555555;line-height:1.6;">${tg.coverage}. ${tg.isRoundtrip ? "One PNR, one carrier. Carrier rebooking protection end to end." : "Separate PNR. Independent fare rules."}</p>
+</td>`;
+  }
+
+  return `<tr><td style="padding:0 48px 32px 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fafaf8;border:1px solid #e0dbd4;">
+<tr><td style="padding:20px 22px;">
+
+<p style="margin:0 0 16px 0;${F}font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:#8b7355;font-weight:bold;">How This Trip Is Ticketed</p>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>${mapCells}</tr>
+</table>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:18px;border-top:1px solid #e8e4de;padding-top:14px;">
+<tr>${legendCells}</tr>
+</table>
+
+</td></tr></table></td></tr>`;
+}
+
+// ── Multi-Strategy: Identity Bar for Ticket Options ──────────────────────────
+
+function htmlMsIdentityBar(opt: MsTicketOption, label: string, eyebrow: string, rightTopLine: string, rightBottomLine: string): string {
+  const carrier = opt.carriers.map((c) => carrierFullName(c)).join(" + ");
+  const flightNums = opt.flights.map((f) => f.flight).join(" &middot; ");
+
+  return `<tr><td style="padding:8px 48px 0 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#2c2c2c;">
+<tr><td style="padding:14px 20px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<p style="margin:0 0 2px 0;${F}font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#8b7355;font-weight:bold;">${eyebrow}</p>
+<p style="margin:0;${F}font-size:17px;font-weight:bold;color:#ffffff;">${carrier} &nbsp;<span style="font-weight:normal;font-size:14px;color:#a8a8a8;">${flightNums}</span></p>
+</td>
+<td style="text-align:right;">
+<p style="margin:0 0 2px 0;${F}font-size:12px;color:#a8a8a8;">${rightTopLine}</p>
+<p style="margin:0;${F}font-size:11px;font-weight:bold;color:#8b7355;">${rightBottomLine}</p>
+</td>
+</tr>
+</table></td></tr></table></td></tr>`;
+}
+
+// ── Multi-Strategy: Routing Zone (supports direction separators, stay gaps) ──
+
+function htmlMsRoutingZone(flights: Scenario["tickets"][0]["flights"], directionSeparators?: { afterFlightIdx: number; label: string }[]): string {
+  const sepMap = new Map<number, string>();
+  (directionSeparators || []).forEach((s) => sepMap.set(s.afterFlightIdx, s.label));
+
+  let html = `<tr><td style="padding:0 48px 0 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e0dbd4;border-top:0;border-bottom:0;background-color:#fafaf8;">
+<tr><td style="padding:18px 22px 4px 22px;">`;
+
+  flights.forEach((f, fi) => {
+    const departAirport = f.route.split(" \u2192 ")[0]?.trim() || "";
+    const arriveAirport = f.route.split(" \u2192 ")[1]?.trim() || "";
+    const acName = aircraftName(f.aircraft);
+    const plusDay = dayDiff(f.departISO, f.arriveISO);
+    const cabinLabel = f.cabin ? cabinDisplayName(f.cabin) : "";
+
+    // Check if there's a direction label before this flight (from separators)
+    // First flight gets a direction label if one is set for index -1
+    if (fi === 0 && sepMap.has(-1)) {
+      html += `<p style="margin:0 0 12px 0;${F}font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#8b7355;font-weight:bold;">${sepMap.get(-1)}</p>`;
+    }
+
+    // Segment block: 3 columns — timeline dots | details | duration
+    html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td style="width:20px;vertical-align:top;padding-top:3px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:20px;">
+<tr><td align="center"><div style="width:9px;height:9px;border-radius:50%;background-color:#8b7355;margin:0 auto;">&nbsp;</div></td></tr>
+<tr><td align="center"><div style="width:1px;height:36px;background-color:#c8bfb4;margin:2px auto;">&nbsp;</div></td></tr>
+<tr><td align="center"><div style="width:9px;height:9px;border-radius:50%;background-color:#8b7355;margin:0 auto;">&nbsp;</div></td></tr>
+</table>
+</td>
+<td style="padding-left:14px;vertical-align:top;">
+<p style="margin:0 0 1px 0;${F}font-size:15px;font-weight:bold;color:#2c2c2c;">${timeFmt12(f.departISO)} &nbsp;&middot;&nbsp; ${airportDisplay(departAirport)}</p>
+<p style="margin:0 0 24px 0;${F}font-size:11px;color:#888888;">${f.flight}${acName ? ` &nbsp;&middot;&nbsp; ${acName}` : ""}${cabinLabel ? ` &nbsp;&middot;&nbsp; ${cabinLabel}` : ""}</p>
+<p style="margin:0;${F}font-size:15px;font-weight:bold;color:#2c2c2c;">${timeFmt12(f.arriveISO)}${plusDay ? `<span style="font-size:10px;color:#b45309;font-weight:bold;">${plusDay}</span>` : ""} &nbsp;&middot;&nbsp; ${airportDisplay(arriveAirport)}</p>
+</td>
+<td style="text-align:right;vertical-align:middle;padding-bottom:6px;">
+<p style="margin:0 0 2px 0;${F}font-size:13px;font-weight:bold;color:#2c2c2c;">${f.duration}</p>
+<p style="margin:0;${F}font-size:11px;color:#888888;">Nonstop</p>
+</td>
+</tr>
+</table>`;
+
+    // Direction separator or layover after this flight
+    if (fi < flights.length - 1) {
+      if (sepMap.has(fi)) {
+        // Direction separator (centered label with lines)
+        html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0;">
+<tr>
+<td style="border-bottom:1px solid #e0dbd4;line-height:0;">&nbsp;</td>
+<td style="white-space:nowrap;padding:0 12px;${F}font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#8b7355;font-weight:bold;">${sepMap.get(fi)}</td>
+<td style="border-bottom:1px solid #e0dbd4;line-height:0;">&nbsp;</td>
+</tr>
+</table>`;
+      } else {
+        // Regular layover bar
+        const nextFlight = flights[fi + 1];
+        const layoverMs = new Date(nextFlight.departISO).getTime() - new Date(f.arriveISO).getTime();
+        const layoverMins = Math.floor(layoverMs / (1000 * 60));
+        const layoverHrs = Math.floor(layoverMins / 60);
+        const layoverRemMins = layoverMins % 60;
+        const layoverText = layoverHrs > 0 ? `${layoverHrs}h ${layoverRemMins}m` : `${layoverMins} min`;
+        const layoverCity = airportDisplay(arriveAirport);
+
+        html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:10px 0 10px 34px;border-top:1px dashed #d0c9be;border-bottom:1px dashed #d0c9be;">
+<tr><td style="padding:8px 0;">
+<p style="margin:0;${F}font-size:12px;color:#555555;"><strong style="color:#2c2c2c;">${layoverText} layover</strong> &nbsp;&middot;&nbsp; ${layoverCity}</p>
+</td></tr></table>`;
+      }
+    }
+  });
+
+  html += `</td></tr></table></td></tr>`;
+  return html;
+}
+
+// ── Multi-Strategy: Package-Row Fare Table (4-column, for roundtrip tickets) ──
+
+function htmlMsPackageFareTable(opt: MsTicketOption, priceLabel: string = "per person, roundtrip"): string {
+  if (opt.fares.length === 0) return "";
+
+  // Group fares into packages: same cabin combo → non-ref and ref pair
+  interface FarePackage {
+    packageName: string;
+    subtitle: string;
+    includes: string[];
+    fares: typeof opt.fares;
+  }
+
+  // Group by cabin+brand pattern (non-ref and ref variants grouped together)
+  const pkgMap = new Map<string, FarePackage>();
+  for (const fare of opt.fares) {
+    const cabinKey = fare.cabinClass + "_" + (fare.brandName || "").replace(/\s*(flex|refundable)\s*/gi, "").trim();
+    if (!pkgMap.has(cabinKey)) {
+      const cabDisplay = cabinDisplayName(fare.cabinClass);
+      const includes: string[] = [];
+      if (fare.fareTerms?.seatType) includes.push(fare.fareTerms.seatType);
+      if (fare.fareTerms?.baggage) includes.push(fare.fareTerms.baggage);
+
+      pkgMap.set(cabinKey, {
+        packageName: cabDisplay,
+        subtitle: fare.brandName || cabDisplay,
+        includes,
+        fares: [],
+      });
+    }
+    pkgMap.get(cabinKey)!.fares.push(fare);
+  }
+
+  // Sort packages: cheapest first
+  const packages = Array.from(pkgMap.values());
+  packages.sort((a, b) => Math.min(...a.fares.map((f) => f.price)) - Math.min(...b.fares.map((f) => f.price)));
+
+  // Build rows: each fare is a row; non-ref before ref within package
+  let rows = "";
+  for (const pkg of packages) {
+    pkg.fares.sort((a, b) => (a.refundable ? 1 : 0) - (b.refundable ? 1 : 0));
+
+    for (const fare of pkg.fares) {
+      const isRef = fare.refundable;
+      const rowBg = isRef ? "#f7fdf7" : "#ffffff";
+      const nameColor = isRef ? "#2e7d32" : "#2c2c2c";
+      const priceColor = isRef ? "#2e7d32" : "#2c2c2c";
+
+      const packageLabel = isRef ? `${pkg.packageName} &middot; Flex` : pkg.packageName;
+      const subtitle = isRef ? "Fully refundable" : "Non-refundable";
+
+      const includeLines = pkg.includes.map((inc) =>
+        `<p style="margin:0 0 2px 0;${F}font-size:11px;color:#555555;">${inc}</p>`
+      ).join("");
+
+      let changeText = "&mdash;";
+      if (fare.fareTerms) {
+        if (fare.fareTerms.changePolicy === "free") changeText = "Free";
+        else if (fare.fareTerms.changePolicy === "fee") changeText = fare.fareTerms.changeSummary || "Fee applies";
+        else if (fare.fareTerms.changePolicy === "none") changeText = "Not permitted";
+        else if (fare.fareTerms.changeSummary && fare.fareTerms.changeSummary !== "No Changes") changeText = fare.fareTerms.changeSummary;
+      }
+
+      rows += `<tr style="background-color:${rowBg};">
+<td style="padding:13px 16px;border-right:1px solid #e0dbd4;border-bottom:1px solid #e0dbd4;vertical-align:top;">
+<p style="margin:0 0 2px 0;${F}font-size:13px;font-weight:bold;color:${nameColor};">${packageLabel}</p>
+<p style="margin:0;${F}font-size:11px;color:#888888;">${subtitle}</p>
+</td>
+<td style="padding:13px 16px;border-right:1px solid #e0dbd4;border-bottom:1px solid #e0dbd4;vertical-align:top;">
+${includeLines || `<p style="margin:0;${F}font-size:11px;color:#555555;">${cabinDisplayName(fare.cabinClass)}</p>`}
+</td>
+<td style="padding:13px 16px;border-right:1px solid #e0dbd4;border-bottom:1px solid #e0dbd4;vertical-align:top;text-align:center;">
+<p style="margin:0;${F}font-size:12px;color:#555555;">${changeText}</p>
+</td>
+<td style="padding:13px 16px;border-bottom:1px solid #e0dbd4;vertical-align:top;text-align:right;">
+<p style="margin:0;${F}font-size:20px;font-weight:bold;color:${priceColor};">${fare.priceStr}</p>
+</td>
+</tr>`;
+    }
+  }
+
+  return `<tr><td style="padding:0 48px 24px 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e0dbd4;border-top:0;border-collapse:collapse;">
+<tr style="background-color:#f5f4f1;">
+<td style="padding:9px 16px;${F}font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:#888888;border-right:1px solid #e0dbd4;border-bottom:1px solid #e0dbd4;width:42%;">Package &nbsp;&middot;&nbsp; ${priceLabel}</td>
+<td style="padding:9px 16px;${F}font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:#888888;border-right:1px solid #e0dbd4;border-bottom:1px solid #e0dbd4;width:30%;">Includes</td>
+<td style="padding:9px 16px;${F}font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:#888888;border-right:1px solid #e0dbd4;border-bottom:1px solid #e0dbd4;width:13%;text-align:center;">Changes</td>
+<td style="padding:9px 16px;${F}font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:#888888;border-bottom:1px solid #e0dbd4;text-align:right;width:15%;">Price</td>
+</tr>
+${rows}
+</table></td></tr>`;
+}
+
+// ── Multi-Strategy: Simple Fare Table (for one-way tickets) ──────────────────
+
+function htmlMsSimpleFareTable(opt: MsTicketOption): string {
+  if (opt.fares.length === 0) return "";
+
+  // Column header
+  const cabin = cabinDisplayName(opt.fares[0]?.cabinClass || "Economy");
+  const bagInfo = opt.fares[0]?.fareTerms?.baggage;
+  const headerExtra = bagInfo ? ` &middot; ${bagInfo}` : "";
+
+  let rows = "";
+  for (const fare of opt.fares) {
+    const isRef = fare.refundable;
+    const rowBg = isRef ? "#f7fdf7" : "#ffffff";
+    const nameColor = isRef ? "#2e7d32" : "#2c2c2c";
+    const priceColor = isRef ? "#2e7d32" : "#2c2c2c";
+
+    const packageLabel = isRef ? `${cabin} &middot; Flex` : `${cabin} &middot; Non-refundable`;
+    const subtitle = isRef ? "Fully refundable" : fare.fareTerms?.changeSummary || "Non-refundable";
+
+    let changeText = "&mdash;";
+    if (fare.fareTerms) {
+      if (fare.fareTerms.changePolicy === "free") changeText = "Free";
+      else if (fare.fareTerms.changePolicy === "fee") changeText = fare.fareTerms.changeSummary || "Fee applies";
+      else if (fare.fareTerms.changePolicy === "none") changeText = "Not permitted";
+      else if (fare.fareTerms.changeSummary && fare.fareTerms.changeSummary !== "No Changes") changeText = fare.fareTerms.changeSummary;
+    }
+
+    rows += `<tr style="background-color:${rowBg};">
+<td style="padding:13px 16px;border-right:1px solid #e0dbd4;border-bottom:1px solid #e0dbd4;vertical-align:top;width:55%;">
+<p style="margin:0 0 2px 0;${F}font-size:13px;font-weight:bold;color:${nameColor};">${packageLabel}</p>
+<p style="margin:0;${F}font-size:11px;color:#888888;">${subtitle}</p>
+</td>
+<td style="padding:13px 16px;border-right:1px solid #e0dbd4;border-bottom:1px solid #e0dbd4;vertical-align:top;text-align:center;width:20%;">
+<p style="margin:0;${F}font-size:12px;color:#555555;">${changeText}</p>
+</td>
+<td style="padding:13px 16px;border-bottom:1px solid #e0dbd4;vertical-align:top;text-align:right;width:25%;">
+<p style="margin:0;${F}font-size:20px;font-weight:bold;color:${priceColor};">${fare.priceStr}</p>
+</td>
+</tr>`;
+  }
+
+  return `<tr><td style="padding:0 48px 24px 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e0dbd4;border-top:0;border-collapse:collapse;">
+<tr style="background-color:#f5f4f1;">
+<td colspan="3" style="padding:9px 16px;${F}font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:#888888;border-bottom:1px solid #e0dbd4;">Per person, one-way &nbsp;&middot;&nbsp; ${cabin}${headerExtra}</td>
+</tr>
+${rows}
+</table></td></tr>`;
+}
+
+// ── Multi-Strategy: Combined Pricing Table ───────────────────────────────────
+
+function htmlMsCombinedPricingTable(scenarios: Scenario[], ticketGroups: MsTicketGroup[]): string {
+  if (scenarios.length === 0 || ticketGroups.length < 2) return "";
+
+  // Build combination rows from scenarios (which are already Cartesian products)
+  const hasRef = scenarios.some((s) => s.allFlex);
+  const hasNonRef = scenarios.some((s) => !s.allFlex);
+  const showBothCols = hasRef && hasNonRef;
+
+  // Dedupe and pick the most relevant combinations (up to 6)
+  interface ComboRow {
+    ticket1Desc: string;
+    ticket2Desc: string;
+    nonRefTotal: string | null;
+    flexTotal: string | null;
+    nonRefRaw: number | null;
+    flexRaw: number | null;
+  }
+
+  // Group scenarios by their ticket descriptions
+  const comboMap = new Map<string, ComboRow>();
+  for (const sc of scenarios) {
+    const t1 = sc.tickets[0];
+    const t2 = sc.tickets[1];
+    if (!t1 || !t2) continue;
+
+    const t1Desc = `${cabinDisplayName(t1.cabinClass)} (${carrierFullName(t1.carrier).split(" ")[0]})`;
+    const t2Flights = t2.flights.map((f) => f.flight).join("+");
+    const t2Desc = `Option ${t2Flights}`;
+    const comboKey = `${t1.cabinClass}_${t1.refundable}_${t2Flights}_${t2.refundable}`;
+
+    if (!comboMap.has(comboKey)) {
+      comboMap.set(comboKey, {
+        ticket1Desc: `${t1Desc}${t1.refundable ? " Flex" : ""}`,
+        ticket2Desc: t2Desc,
+        nonRefTotal: !sc.allFlex ? sc.totalPrice : null,
+        flexTotal: sc.allFlex ? sc.totalPrice : null,
+        nonRefRaw: !sc.allFlex ? sc.totalRaw : null,
+        flexRaw: sc.allFlex ? sc.totalRaw : null,
+      });
+    } else {
+      const existing = comboMap.get(comboKey)!;
+      if (sc.allFlex && !existing.flexTotal) {
+        existing.flexTotal = sc.totalPrice;
+        existing.flexRaw = sc.totalRaw;
+      }
+      if (!sc.allFlex && !existing.nonRefTotal) {
+        existing.nonRefTotal = sc.totalPrice;
+        existing.nonRefRaw = sc.totalRaw;
+      }
+    }
+  }
+
+  // Flatten and sort
+  let combos = Array.from(comboMap.values());
+  combos.sort((a, b) => (a.nonRefRaw || a.flexRaw || 0) - (b.nonRefRaw || b.flexRaw || 0));
+  if (combos.length > 6) combos = combos.slice(0, 6);
+
+  let rows = "";
+  combos.forEach((combo, ci) => {
+    const bg = ci % 2 === 0 ? "#ffffff" : "#fafaf8";
+    rows += `<tr style="background-color:${bg};">
+<td style="padding:11px 14px;${F}font-size:12px;color:#2c2c2c;border-right:1px solid #e0dbd4;border-bottom:1px solid #e0dbd4;">${combo.ticket1Desc}</td>
+<td style="padding:11px 14px;${F}font-size:12px;color:#2c2c2c;border-right:1px solid #e0dbd4;border-bottom:1px solid #e0dbd4;">+ ${combo.ticket2Desc}</td>`;
+
+    if (showBothCols) {
+      rows += `<td style="padding:11px 14px;${F}font-size:13px;font-weight:bold;color:#2c2c2c;text-align:right;border-right:1px solid #e0dbd4;border-bottom:1px solid #e0dbd4;">${combo.nonRefTotal || "&mdash;"}</td>
+<td style="padding:11px 14px;${F}font-size:13px;font-weight:bold;color:#2e7d32;text-align:right;border-bottom:1px solid #e0dbd4;">${combo.flexTotal || "&mdash;"}</td>`;
+    } else {
+      const price = combo.nonRefTotal || combo.flexTotal;
+      const isGreen = !combo.nonRefTotal && combo.flexTotal;
+      rows += `<td style="padding:11px 14px;${F}font-size:13px;font-weight:bold;color:${isGreen ? "#2e7d32" : "#2c2c2c"};text-align:right;border-bottom:1px solid #e0dbd4;">${price || "&mdash;"}</td>`;
+    }
+
+    rows += `</tr>`;
+  });
+
+  // Footer note
+  rows += `<tr style="background-color:#fef9f4;">
+<td colspan="${showBothCols ? 4 : 3}" style="padding:10px 14px;">
+<p style="margin:0;${F}font-size:11px;color:#8b7355;font-style:italic;">All combinations available. Totals are per person. Reply with your choices and I&rsquo;ll confirm the combined price.</p>
+</td></tr>`;
+
+  const t1Label = ticketGroups[0]?.ticketLabel.replace(/ of \d+/, "") || "Ticket 1";
+  const t2Label = ticketGroups[1]?.ticketLabel.replace(/ of \d+/, "") || "Ticket 2";
+
+  return `<tr><td style="padding:0 48px 0 48px;border-top:2px solid #eeebe5;">
+<p style="margin:24px 0 14px 0;${F}font-size:10px;letter-spacing:2.5px;text-transform:uppercase;color:#8b7355;font-weight:bold;">Combined Pricing</p>
+</td></tr>
+<tr><td style="padding:0 48px 28px 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e0dbd4;border-collapse:collapse;">
+<tr style="background-color:#2c2c2c;">
+<td style="padding:9px 14px;${F}font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#e8e4de;border-right:1px solid #3a3a3a;">${t1Label} package</td>
+<td style="padding:9px 14px;${F}font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#e8e4de;border-right:1px solid #3a3a3a;">+ ${t2Label} option</td>
+${showBothCols
+  ? `<td style="padding:9px 14px;${F}font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#a8a8a8;text-align:right;border-right:1px solid #3a3a3a;">Non-ref total</td>
+<td style="padding:9px 14px;${F}font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#2e7d32;text-align:right;">Flex total</td>`
+  : `<td style="padding:9px 14px;${F}font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#e8e4de;text-align:right;">Per person</td>`}
+</tr>
+${rows}
+</table></td></tr>`;
+}
+
+// ── Multi-Strategy: How to Reply Block ───────────────────────────────────────
+
+function htmlMsHowToReply(ticketGroups: MsTicketGroup[]): string {
+  const numTickets = ticketGroups.length;
+
+  let replyText: string;
+  if (numTickets === 2) {
+    replyText = `Two choices to make &mdash; one for each ticket. Reply with your ${ticketGroups[0].ticketLabel.replace(/ of \d+/, "")} package and ${ticketGroups[1].ticketLabel.replace(/ of \d+/, "")} option, for example: <strong>&ldquo;${ticketGroups[0].ticketLabel.replace(/ of \d+/, "")}: Option A, non-refundable &mdash; ${ticketGroups[1].ticketLabel.replace(/ of \d+/, "")}: Option 1, non-refundable.&rdquo;</strong>`;
+  } else {
+    replyText = `Reply with your preferred option for each ticket &mdash; for example, <strong>&ldquo;Ticket 1: Option A &mdash; Ticket 2: Option 1.&rdquo;</strong>`;
+  }
+
+  return `<tr><td style="padding:0 48px 28px 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fafaf8;border-left:3px solid #e0dbd4;">
+<tr><td style="padding:16px 18px;">
+<p style="margin:0 0 6px 0;${F}font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#8b7355;font-weight:bold;">How to Reply</p>
+<p style="margin:0;${F}font-size:13px;color:#555555;line-height:1.85;">${replyText}</p>
+</td></tr></table></td></tr>`;
+}
+
+// ── Multi-Strategy: Multi-Ticket Disclaimer ──────────────────────────────────
+
+function htmlMsMultiTicketDisclaimer(ticketGroups: MsTicketGroup[]): string {
+  const numTickets = ticketGroups.length;
+  const ticketNums = ticketGroups.map((_, i) => i + 1).join(" and ");
+  return `<tr><td style="padding:0 48px 16px 48px;">
+<p style="margin:0;${F}font-size:12px;color:#555555;font-style:italic;line-height:1.7;">Tickets ${ticketNums} are booked separately and have independent fare rules and cancellation policies. Each must be ticketed to its own deadline.</p></td></tr>`;
+}
+
+// ── Multi-Strategy Renderers ─────────────────────────────────────────────────
+
 function renderMultiStrategyFixed(scenarios: Scenario[], model: StrategyModel, copy: ProposalCopy): string {
-  // Exactly one scenario per strategy, all slots resolved
   const sc = scenarios[0];
   if (!sc) return wrapEmailShell(model, htmlHeader(model) + htmlFooter());
 
-  // Build strategy callout
-  const ticketDescs = sc.tickets.map((t, i) =>
-    `${t.ticketLabel}: ${t.coverage} with ${carrierFullName(t.carrier)}`
-  ).join(", and ");
-  const callout = `To get you the best fares, this trip uses ${sc.tickets.length} separate bookings: ${ticketDescs}. Both are straightforward to manage &mdash; details below.`;
+  const ticketGroups = extractMsTicketGroups(scenarios);
+  const bodyNote = ticketGroups.length > 1
+    ? `This trip uses ${ticketGroups.length} separate bookings to get you the best routing and fares. Details below.`
+    : "";
 
   let sections = "";
 
-  sc.tickets.forEach((ticket, ti) => {
-    if (sc.tickets.length > 1) {
-      sections += `<tr><td style="padding:${ti > 0 ? "20" : "4"}px 48px 8px 48px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#2c2c2c;">
-<tr><td style="padding:14px 20px;">
-<p style="margin:0 0 2px 0;${F}font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#8b7355;font-weight:bold;">${ticket.ticketLabel} of ${sc.tickets.length} &middot; ${carrierFullName(ticket.carrier)}</p>
-<p style="margin:0;${F}font-size:14px;color:#ffffff;">${ticket.coverage}</p>
-</td></tr></table></td></tr>`;
+  // Trip architecture block for multi-ticket
+  if (ticketGroups.length > 1) {
+    sections += htmlTripArchitectureBlock(ticketGroups, model);
+  }
+
+  // Render each ticket
+  for (const tg of ticketGroups) {
+    const opt = tg.options[0];
+    if (!opt) continue;
+
+    // Ticket section header
+    if (ticketGroups.length > 1) {
+      const typeLabel = tg.isRoundtrip ? "Open-jaw Roundtrip" : "One-way";
+      sections += `<tr><td style="padding:${tg.ticketIdx > 0 ? "4px 48px 8px 48px;border-top:2px solid #2c2c2c;" : "0 48px 8px 48px;"}">
+<p style="margin:${tg.ticketIdx > 0 ? "20" : "0"}px 0 3px 0;${F}font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:#8b7355;font-weight:bold;">${tg.ticketLabel} &mdash; ${typeLabel}</p>
+<p style="margin:0;${F}font-size:20px;font-weight:bold;color:#2c2c2c;">${tg.coverage}</p>
+</td></tr>`;
     }
 
-    ticket.flights.forEach((f) => { sections += htmlFlightCard(f, ticket.carrier); });
-    sections += htmlFareTable(ticket);
-  });
+    // Identity bar
+    const carrier = opt.carriers.map((c) => carrierFullName(c)).join(" + ");
+    const stopsText = opt.flights.length === 1 ? "Nonstop" : `${opt.flights.length - 1} stop${opt.flights.length > 2 ? "s" : ""}`;
 
-  sections += htmlMultiTicketDisclaimer(sc.tickets.length);
+    sections += htmlMsIdentityBar(
+      opt,
+      carrier,
+      `${stopsText} &middot; ${carrierFullName(opt.carrier)}`,
+      tg.coverage,
+      tg.isRoundtrip ? "Open-jaw roundtrip" : "One-way"
+    );
+
+    // Routing zone with direction separators for roundtrip
+    const seps: { afterFlightIdx: number; label: string }[] = [];
+    if (tg.isRoundtrip && opt.flights.length >= 2) {
+      // Find the return direction separator — roughly halfway through the flights
+      const midIdx = Math.floor(opt.flights.length / 2) - 1;
+      if (midIdx >= 0) {
+        const returnFlight = opt.flights[midIdx + 1];
+        const returnDate = fullDateFmt(returnFlight.departISO);
+        seps.push({ afterFlightIdx: midIdx, label: `Return &middot; ${returnDate}` });
+      }
+      // Outbound label
+      seps.push({ afterFlightIdx: -1, label: `Outbound &middot; ${fullDateFmt(opt.flights[0].departISO)}` });
+    }
+
+    sections += htmlMsRoutingZone(opt.flights, seps);
+
+    // Fare table
+    if (tg.isRoundtrip) {
+      sections += htmlMsPackageFareTable(opt, "per person, roundtrip");
+    } else {
+      sections += htmlMsSimpleFareTable(opt);
+    }
+  }
+
+  // Multi-ticket disclaimer and pricing
+  if (ticketGroups.length > 1) {
+    sections += htmlMsMultiTicketDisclaimer(ticketGroups);
+  }
   sections += htmlPricingSummary(sc);
 
   return wrapEmailShell(model, [
     htmlHeader(model),
-    htmlEmailBody(copy.introduction, ""),
-    htmlStrategyCallout(callout),
+    htmlEmailBody(copy.introduction, bodyNote),
     htmlDiamond(),
     htmlTripDetailsBar(model),
     sections,
@@ -2629,89 +3812,122 @@ function renderMultiStrategyFixed(scenarios: Scenario[], model: StrategyModel, c
 }
 
 function renderMultiStrategyFlex(scenarios: Scenario[], model: StrategyModel, copy: ProposalCopy): string {
-  const bodyNote = "I&rsquo;ve structured these options around a split-ticket approach to give you better fares.";
+  const ticketGroups = extractMsTicketGroups(scenarios);
 
-  // Build "How This Works" data from unique ticket slots across scenarios
-  const ticketSlots = new Map<string, { label: string; coverage: string; carriers: Set<string>; prices: number[] }>();
-  for (const sc of scenarios) {
-    for (const ticket of sc.tickets) {
-      if (!ticketSlots.has(ticket.ticketLabel)) {
-        ticketSlots.set(ticket.ticketLabel, { label: ticket.ticketLabel, coverage: ticket.coverage, carriers: new Set(), prices: [] });
-      }
-      const slot = ticketSlots.get(ticket.ticketLabel)!;
-      slot.carriers.add(carrierFullName(ticket.carrier));
-      slot.prices.push(parseFloat(ticket.price.replace(/[^0-9.]/g, "")));
-    }
-  }
-
-  const howTickets = Array.from(ticketSlots.values()).map((t) => ({
-    label: t.label,
-    coverage: t.coverage,
-    carriers: Array.from(t.carriers).join(", "),
-    priceRange: t.prices.length > 1
-      ? `from ${pfmt(Math.min(...t.prices))} to ${pfmt(Math.max(...t.prices))}`
-      : pfmt(t.prices[0]),
-    desc: `${t.coverage}`,
-  }));
-
-  const cheapest = scenarios[0];
-  const flexScenario = scenarios.find((s) => s.allFlex);
+  const bodyNote = ticketGroups.length > 1
+    ? "The sections below are independent choices &mdash; pick one option for each ticket. I&rsquo;ve shown the combined cost at the bottom."
+    : "";
 
   let sections = "";
 
-  // Group scenarios by ticket structure to show per-ticket options
-  // For each unique ticket label, dedupe options
-  const ticketOptionMap = new Map<string, Map<string, Scenario["tickets"][0]>>();
-  for (const sc of scenarios) {
-    for (const ticket of sc.tickets) {
-      if (!ticketOptionMap.has(ticket.ticketLabel)) ticketOptionMap.set(ticket.ticketLabel, new Map());
-      const optKey = ticket.flights.map((f) => f.flight).join("+") + "_" + ticket.price;
-      if (!ticketOptionMap.get(ticket.ticketLabel)!.has(optKey)) {
-        ticketOptionMap.get(ticket.ticketLabel)!.set(optKey, ticket);
-      }
+  // Trip architecture block
+  if (ticketGroups.length > 1) {
+    sections += htmlTripArchitectureBlock(ticketGroups, model);
+  }
+
+  // Render each ticket section
+  for (const tg of ticketGroups) {
+    // Section header
+    const typeLabel = tg.isRoundtrip ? "Open-jaw Roundtrip" : "Internal One-way";
+    const chooseText = tg.options.length > 1 ? " &middot; Choose one" : "";
+
+    if (ticketGroups.length > 1) {
+      sections += `<tr><td style="padding:${tg.ticketIdx > 0 ? "4px 48px 8px 48px;border-top:2px solid #2c2c2c;" : "0 48px 8px 48px;"}">
+<p style="margin:${tg.ticketIdx > 0 ? "20" : "0"}px 0 3px 0;${F}font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:#8b7355;font-weight:bold;">${tg.ticketLabel} &mdash; ${typeLabel}${chooseText}</p>
+<p style="margin:0;${F}font-size:20px;font-weight:bold;color:#2c2c2c;">${tg.coverage}</p>
+</td></tr>`;
     }
-  }
 
-  let ticketIdx = 0;
-  const totalTickets = ticketOptionMap.size;
+    // Label options: Ticket 1 uses A, B, C; Ticket 2 uses Option 1, 2, 3
+    const isFirstTicket = tg.ticketIdx === 0;
 
-  for (const [ticketLabel, optsMap] of ticketOptionMap) {
-    const opts = Array.from(optsMap.values());
-    const first = opts[0];
-    const optCount = opts.length;
+    tg.options.forEach((opt, oi) => {
+      const optLabel = isFirstTicket
+        ? `Option ${String.fromCharCode(65 + oi)}`
+        : `Option ${oi + 1}`;
 
-    sections += `<tr><td style="padding:${ticketIdx > 0 ? "24" : "4"}px 48px 10px 48px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#2c2c2c;">
-<tr><td style="padding:16px 20px;">
-<p style="margin:0 0 2px 0;${F}font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#8b7355;font-weight:bold;">${ticketLabel} of ${totalTickets}</p>
-<p style="margin:0 0 4px 0;${F}font-size:16px;color:#ffffff;font-weight:bold;">${first.coverage}</p>
-<p style="margin:0;${F}font-size:12px;color:#a8a8a8;">${optCount > 1 ? `Choose one of ${optCount} options below` : "1 option"}</p>
-</td></tr></table></td></tr>`;
+      // Build eyebrow text
+      const numStops = opt.flights.length - 1;
+      const stopsText = numStops === 0 ? "Nonstop" : `${numStops} stop${numStops > 1 ? "s" : ""}`;
+      const eyebrow = tg.isRoundtrip
+        ? `${optLabel} &nbsp;&middot;&nbsp; ${stopsText} both ways`
+        : `${optLabel} &nbsp;&middot;&nbsp; ${stopsText}`;
 
-    opts.sort((a, b) => parseFloat(a.price.replace(/[^0-9.]/g, "")) - parseFloat(b.price.replace(/[^0-9.]/g, "")));
-    const optionLabels = "ABCDEFGHIJ";
+      // Build right side info
+      const firstFlight = opt.flights[0];
+      const lastFlight = opt.flights[opt.flights.length - 1];
+      const routeEndpoints = `${firstFlight.route.split(" \u2192 ")[0]?.trim()} &rarr; ${lastFlight.route.split(" \u2192 ")[1]?.trim()}`;
 
-    opts.forEach((ticket, oi) => {
-      if (oi > 0) sections += `<tr><td style="padding:8px 48px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:1px dashed #e8e4de;"></td></tr></table></td></tr>`;
+      sections += htmlMsIdentityBar(
+        opt,
+        optLabel,
+        eyebrow,
+        routeEndpoints,
+        tg.isRoundtrip ? "Open-jaw roundtrip" : `${opt.flights.length} separate legs`
+      );
 
-      sections += `<tr><td style="padding:6px 48px 4px 48px;">
-<p style="margin:0;${F}font-size:12px;font-weight:bold;color:#8b7355;letter-spacing:1px;">OPTION ${optionLabels[oi] || oi + 1} &nbsp;&middot;&nbsp; ${carrierFullName(ticket.carrier)} &nbsp;&middot;&nbsp; ${ticket.price}</p></td></tr>`;
+      // Routing zone
+      const seps: { afterFlightIdx: number; label: string }[] = [];
+      if (tg.isRoundtrip && opt.flights.length >= 2) {
+        const midIdx = Math.floor(opt.flights.length / 2) - 1;
+        if (midIdx >= 0) {
+          const returnFlight = opt.flights[midIdx + 1];
+          seps.push({ afterFlightIdx: midIdx, label: `Return &middot; ${fullDateFmt(returnFlight.departISO)}` });
+        }
+        seps.push({ afterFlightIdx: -1, label: `Outbound &middot; ${fullDateFmt(opt.flights[0].departISO)}` });
+      } else if (!tg.isRoundtrip && opt.flights.length >= 2) {
+        // Internal one-way with multiple legs — add leg labels
+        opt.flights.forEach((f, fi) => {
+          if (fi === 0) {
+            seps.push({ afterFlightIdx: -1, label: `Leg 1 &middot; ${fullDateFmt(f.departISO)}` });
+          }
+        });
+        // Check for multi-day gaps between flights (stay separators)
+        for (let fi = 0; fi < opt.flights.length - 1; fi++) {
+          const arrDate = new Date(opt.flights[fi].arriveISO);
+          const depDate = new Date(opt.flights[fi + 1].departISO);
+          const dayGap = Math.floor((depDate.getTime() - arrDate.getTime()) / (1000 * 60 * 60 * 24));
+          if (dayGap >= 1) {
+            // Stay separator
+            const arrAirport = opt.flights[fi].route.split(" \u2192 ")[1]?.trim() || "";
+            const cityName = AIRPORT_FULL_NAMES[arrAirport]?.city || arrAirport;
+            seps.push({
+              afterFlightIdx: fi,
+              label: `${dayGap} night${dayGap > 1 ? "s" : ""} &middot; ${cityName}`
+            });
+          }
+        }
+      }
 
-      ticket.flights.forEach((f) => { sections += htmlFlightCard(f, ticket.carrier); });
-      sections += htmlFareTable(ticket);
+      sections += htmlMsRoutingZone(opt.flights, seps);
+
+      // Fare table
+      if (tg.isRoundtrip) {
+        sections += htmlMsPackageFareTable(opt, "per person, roundtrip");
+      } else {
+        sections += htmlMsSimpleFareTable(opt);
+      }
     });
-
-    ticketIdx++;
   }
 
-  // Combination pricing
-  sections += htmlCombinationMatrix(scenarios);
-  sections += htmlMultiTicketDisclaimer(totalTickets);
+  // Combined pricing table
+  if (ticketGroups.length > 1) {
+    sections += htmlMsCombinedPricingTable(scenarios, ticketGroups);
+  }
+
+  // How to reply
+  if (ticketGroups.length > 1) {
+    sections += htmlMsHowToReply(ticketGroups);
+  }
+
+  // Multi-ticket disclaimer
+  if (ticketGroups.length > 1) {
+    sections += htmlMsMultiTicketDisclaimer(ticketGroups);
+  }
 
   return wrapEmailShell(model, [
     htmlHeader(model),
     htmlEmailBody(copy.introduction, bodyNote),
-    htmlHowThisWorks(howTickets, cheapest?.totalPrice || "—", flexScenario?.totalPrice || null),
     htmlDiamond(),
     htmlTripDetailsBar(model),
     sections,
@@ -3112,6 +4328,7 @@ What are your client's priorities?`;
         perAdult: v.perAdult,
         refundable: v.refundable,
         cabin: v.cabin || "Economy",
+        cabins: [v.cabin || "Economy"],
         bookingClass: v.bookingClass || "",
         brandName: v.label,
         validatingCarrier: ao.carrier,
@@ -3351,6 +4568,76 @@ What are your client's priorities?`;
     } catch {
       /* Copy failed — placeholder text stays */
     }
+  };
+
+  // ── Analyze Best Strategy ──
+
+  const analyzeStrategy = async () => {
+    if (loading) return;
+    if (!apiKey) {
+      setMessages((p) => [
+        ...p,
+        { role: "user", content: "Analyze which strategy is best for my client." },
+        { role: "assistant", content: "No API key configured. The analysis feature requires an Anthropic API key." },
+      ]);
+      return;
+    }
+
+    setMessages((p) => [
+      ...p,
+      { role: "user", content: "Analyze which strategy is best for my client." },
+    ]);
+    setLoading(true);
+
+    // Build a comprehensive data dump of all strategies
+    const strategyData = model.strategies.map((s) => {
+      const slots = s.slots.map((sl) => {
+        const options = sl.options.slice(0, 8).map((opt) => {
+          const segs = opt.segments.map((seg) => `${seg.origin}→${seg.destination} ${seg.marketingCarrier}${seg.flightNumber} ${seg.equipment || ""} ${seg.departureTime?.slice(11, 16) || ""}→${seg.arrivalTime?.slice(11, 16) || ""}`).join(" / ");
+          const fares = opt.variants.map((v) => `${v.label} $${v.perAdult.toFixed(0)}pp ${v.refundable ? "[REFUNDABLE]" : "[NON-REF]"} ${v.fareTerms.changeSummary} | ${v.fareTerms.baggage} | ${v.fareTerms.seatType || "standard seat"}`).join("; ");
+          return `  ${opt.carrierName} (${opt.carrier}) ${opt.totalDuration} ${opt.stops === 0 ? "nonstop" : opt.stops + " stop"} score:${opt.score}\n    Route: ${segs}\n    Fares: ${fares}`;
+        }).join("\n");
+        return `${sl.label} (${sl.coverage}):\n${options}`;
+      }).join("\n\n");
+      return `STRATEGY ${s.num}: ${s.label}\nTagline: ${s.tagline}\nPros: ${s.pros.join(", ")}\nCons: ${s.cons.join(", ")}\n\n${slots}`;
+    }).join("\n\n---\n\n");
+
+    const analysisPrompt = `You are a senior luxury travel advisor. Analyze ALL available strategies and options below for this trip: ${model.routeSummary} · ${model.dateSummary} · ${model.paxSummary}.
+
+${strategyData}
+
+Provide a thorough but concise analysis (max ~400 words) covering:
+1. **Best overall strategy** and why (considering price, convenience, flexibility, routing quality)
+2. **Best value pick** — the specific option + fare tier that offers the best bang for buck
+3. **Premium pick** — if the client wants maximum comfort/flexibility, what to choose
+4. **Watch-outs** — any gotchas like tight connections, red-eye flights, old aircraft, non-refundable-only options
+5. **Your recommendation** — a clear 1-2 sentence recommendation
+
+Use plain text. Be direct and expert. Reference specific carriers, flight numbers, and prices. Think like a luxury travel advisor who knows what matters.`;
+
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2000,
+          system: systemPrompt,
+          messages: [{ role: "user", content: analysisPrompt }],
+        }),
+      });
+      const d = await res.json();
+      const txt = d.content?.find((b: { type: string }) => b.type === "text")?.text || "Unable to generate analysis.";
+      setMessages((p) => [...p, { role: "assistant", content: txt }]);
+    } catch {
+      setMessages((p) => [...p, { role: "assistant", content: "Connection error — please retry." }]);
+    }
+    setLoading(false);
   };
 
   // ── Render ──
@@ -3678,12 +4965,30 @@ What are your client's priorities?`;
             )}
           </div>
 
-          {/* Combo calculator */}
-          <ComboCalc strategy={strategy} resolveSlotItems={resolveSlotItems} />
+          {/* Combo calculator — removed: distracting during slot-2/3 search */}
         </div>
 
         {/* ── Right: Chat ── */}
         <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Analyze button */}
+          <div className="shrink-0 px-[13px] pt-[10px] pb-[6px]" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+            <button
+              onClick={analyzeStrategy}
+              disabled={loading}
+              className="w-full rounded-[7px] border-none cursor-pointer text-white text-[10px] font-bold tracking-[1.5px] uppercase transition-all duration-200 flex items-center justify-center gap-[6px]"
+              style={{
+                padding: "9px 14px",
+                background: loading ? "rgba(255,255,255,0.03)" : "linear-gradient(135deg, #8b7355, #a08b6a)",
+                opacity: loading ? 0.4 : 1,
+                border: "1px solid rgba(139,115,85,0.3)",
+              }}
+              onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = "linear-gradient(135deg, #a08b6a, #b8a07d)"; }}
+              onMouseLeave={(e) => { if (!loading) e.currentTarget.style.background = "linear-gradient(135deg, #8b7355, #a08b6a)"; }}
+            >
+              <span style={{ fontSize: "13px" }}>✦</span>
+              {loading ? "Analyzing…" : "Have Claude Analyze Best Strategy"}
+            </button>
+          </div>
           <div className="flex-1 overflow-y-auto p-[14px_14px_6px]">
             {messages.map((m, i) => (
               <ChatMsg

@@ -160,6 +160,18 @@ public class SearchOrchestrator : ISearchOrchestrator
             // Build BFM request
             var bfmRequest = _requestBuilder.Build(apiCall, request);
 
+            // Log cabin preferences for debugging multi-class searches
+            var cabinPrefs = bfmRequest.SearchRq.TravelPreferences.CabinPref;
+            var perOdInfo = bfmRequest.SearchRq.OriginDestinationInformation
+                .Select(od => $"OD{od.Rph}={od.TpaExtensions?.CabinPref?.Cabin ?? "global"}")
+                .ToList();
+            _logger.LogInformation(
+                "BFM call {CallId} — global CabinPref: [{GlobalCabins}] | per-OD: [{PerOd}] | segments [{SegIndices}]",
+                apiCall.CallId,
+                string.Join(", ", cabinPrefs.Select(c => c.Cabin)),
+                string.Join(", ", perOdInfo),
+                string.Join(", ", apiCall.SegmentIndices));
+
             // Execute
             var response = await _sabreClient.SearchFlightsAsync(bfmRequest, cancellationToken);
 
@@ -185,8 +197,26 @@ public class SearchOrchestrator : ISearchOrchestrator
             stratResult.Success = true;
             stratResult.ResultCount = itineraries.Count;
 
-            _logger.LogInformation("Strategy {StrategyId} call {CallId}: {Count} itineraries in {Ms}ms",
-                strategy.Id, apiCall.CallId, itineraries.Count, sw.ElapsedMilliseconds);
+            // Log cabin class distribution for debugging multi-class
+            var cabinDist = itineraries
+                .SelectMany(i => i.Segments.Select(s => s.Cabin.ToString()))
+                .GroupBy(c => c)
+                .Select(g => $"{g.Key}={g.Count()}")
+                .ToList();
+
+            // Also log mixed-cabin pairs (e.g. "Business→Economy=15, Business→Business=20")
+            var cabinPairs = itineraries
+                .Where(i => i.Segments.Count > 1)
+                .Select(i => string.Join("→", i.Segments.Select(s => s.Cabin.ToString())))
+                .GroupBy(p => p)
+                .Select(g => $"{g.Key}={g.Count()}")
+                .ToList();
+
+            _logger.LogInformation(
+                "Strategy {StrategyId} call {CallId}: {Count} itineraries in {Ms}ms — cabins: [{CabinDist}] — pairs: [{CabinPairs}]",
+                strategy.Id, apiCall.CallId, itineraries.Count, sw.ElapsedMilliseconds,
+                string.Join(", ", cabinDist),
+                cabinPairs.Count > 0 ? string.Join(", ", cabinPairs) : "n/a (one-way)");
 
             return (itineraries, stratResult, messages);
         }
@@ -213,7 +243,7 @@ public class SearchOrchestrator : ISearchOrchestrator
 
         // Fare identity
         var fareKey = string.Join("|", itin.Segments.Select(s =>
-            $"{s.BookingClass}:{s.Brand?.Name ?? ""}"));
+            $"{s.BookingClass}:{s.Cabin}:{s.Brand?.Name ?? ""}"));
 
         return $"{fingerprint}|{itin.ValidatingCarrier}|{fareKey}";
     }

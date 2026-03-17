@@ -26,7 +26,8 @@ export interface Variant {
   label: string; // e.g. "ECONOMY FLEX" or "Business Y"
   perAdult: number;
   refundable: boolean;
-  cabin: string;
+  cabin: string;           // combined label e.g. "Business → Economy" for mixed-cabin
+  cabins: string[];        // per-segment cabin classes e.g. ["Business", "Economy"]
   bookingClass: string;
   brandName?: string;
   validatingCarrier: string; // who tickets/sells this fare
@@ -242,10 +243,25 @@ function extractFareTerms(itin: EnrichedItinerary): FareTerms {
 }
 
 function buildVariantLabel(itin: EnrichedItinerary): string {
-  const seg0 = itin.segments[0];
-  if (seg0?.brand?.name) return seg0.brand.name;
-  const cabin = seg0?.cabin || "Economy";
-  const cls = seg0?.bookingClass || "";
+  // Collect per-segment brand names
+  const brandNames = itin.segments.map((s) => s.brand?.name || "");
+  const hasBrands = brandNames.some(Boolean);
+
+  if (hasBrands) {
+    const distinctBrands = [...new Set(brandNames.filter(Boolean))];
+    if (distinctBrands.length === 1) {
+      // Same brand on all segments
+      return distinctBrands[0];
+    }
+    // Different brands per segment — show both: "Business Promo + Main Cabin"
+    return brandNames.filter(Boolean).join(" + ");
+  }
+
+  // Non-branded: show cabin info (mixed or single)
+  const perSegCabins = itin.segments.map((s) => s.cabin || "Economy");
+  const distinct = [...new Set(perSegCabins)];
+  const cabin = distinct.length > 1 ? perSegCabins.join(" → ") : (perSegCabins[0] || "Economy");
+  const cls = itin.segments[0]?.bookingClass || "";
   return cls ? `${cabin} ${cls}` : cabin;
 }
 
@@ -294,17 +310,29 @@ function groupIntoOptions(itineraries: EnrichedItinerary[]): Option[] {
     );
 
     const primary = deduplicated[0];
-    const variants: Variant[] = deduplicated.map((itin) => ({
-      itinerary: itin,
-      label: buildVariantLabel(itin),
-      perAdult: itin.pricing.pricePerAdult,
-      refundable: !itin.farePolicy.nonRefundable,
-      cabin: itin.segments[0]?.cabin || "Economy",
-      bookingClass: itin.segments[0]?.bookingClass || "",
-      brandName: itin.segments[0]?.brand?.name,
-      validatingCarrier: itin.validatingCarrier,
-      fareTerms: extractFareTerms(itin),
-    }));
+    const variants: Variant[] = deduplicated.map((itin) => {
+      const perSegCabins = itin.segments.map((s) => s.cabin || "Economy");
+      const distinctCabins = [...new Set(perSegCabins)];
+      const cabinLabel = distinctCabins.length > 1
+        ? perSegCabins.join(" → ")
+        : (perSegCabins[0] || "Economy");
+      return {
+        itinerary: itin,
+        label: buildVariantLabel(itin),
+        perAdult: itin.pricing.pricePerAdult,
+        refundable: !itin.farePolicy.nonRefundable,
+        cabin: cabinLabel,
+        cabins: perSegCabins,
+        bookingClass: itin.segments[0]?.bookingClass || "",
+        brandName: (() => {
+          const brands = itin.segments.map((s) => s.brand?.name || "").filter(Boolean);
+          const distinct = [...new Set(brands)];
+          return distinct.length > 1 ? brands.join(" + ") : (distinct[0] || undefined);
+        })(),
+        validatingCarrier: itin.validatingCarrier,
+        fareTerms: extractFareTerms(itin),
+      };
+    });
 
     return {
       id: `opt_${primary.id}`,

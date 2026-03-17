@@ -87,7 +87,7 @@ public class SabreClient : ISabreClient
             using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
             _logger.LogInformation("Sending BFM request to /v4/offers/shop");
-            _logger.LogDebug("BFM request body: {RequestBody}", json);
+            _logger.LogInformation("BFM request body (cabins debug): {RequestBody}", json);
 
             var response = await _httpClient.PostAsync("/v4/offers/shop", content, cancellationToken);
             var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -98,11 +98,30 @@ public class SabreClient : ISabreClient
                 return null;
             }
 
-            _logger.LogDebug("BFM response body: {ResponseBody}", responseBody);
+            // Temporarily elevated to Information for mixed-cabin debugging
+            _logger.LogInformation("BFM response body (first 2000 chars): {ResponseBody}",
+                responseBody.Length > 2000 ? responseBody[..2000] + "..." : responseBody);
             var result = JsonSerializer.Deserialize<BfmGroupedResponse>(responseBody, JsonOptions);
 
             var itinCount = result?.GroupedItineraryResponse?.Statistics?.ItineraryCount ?? 0;
             _logger.LogInformation("BFM returned {ItineraryCount} itineraries", itinCount);
+
+            // Log fare component cabin distribution to verify mixed-cabin in raw response
+            if (result?.GroupedItineraryResponse?.FareComponentDescs != null)
+            {
+                var fcCabins = result.GroupedItineraryResponse.FareComponentDescs
+                    .Where(fc => !string.IsNullOrEmpty(fc.Cabin))
+                    .GroupBy(fc => fc.Cabin)
+                    .Select(g => $"{g.Key}={g.Count()}")
+                    .ToList();
+                var fcDirs = result.GroupedItineraryResponse.FareComponentDescs
+                    .Where(fc => !string.IsNullOrEmpty(fc.Directionality))
+                    .GroupBy(fc => $"{fc.Directionality}:{fc.Cabin ?? "?"}")
+                    .Select(g => $"{g.Key}={g.Count()}")
+                    .ToList();
+                _logger.LogInformation("BFM fare component cabins: [{FcCabins}] — directions: [{FcDirs}]",
+                    string.Join(", ", fcCabins), string.Join(", ", fcDirs));
+            }
 
             return result;
         }

@@ -104,6 +104,27 @@ public class BfmResponseParser : IBfmResponseParser
             baseLegData.Add((legDesc, departureDate));
         }
 
+        // Debug: log fare component → cabin mapping for first itinerary to verify mixed-cabin parsing
+        if (itin.PricingInformation.Count > 0 && baseLegData.Count > 1)
+        {
+            var firstFare = itin.PricingInformation[0].Fare;
+            var paxInfo = firstFare.PassengerInfoList.FirstOrDefault()?.PassengerInfo;
+            if (paxInfo?.FareComponents != null)
+            {
+                var fcDetails = paxInfo.FareComponents.Select((fc, idx) =>
+                {
+                    lookups.FareComponents.TryGetValue(fc.Ref, out var desc);
+                    var descCabin = desc?.Cabin ?? "?";
+                    var descDir = desc?.Directionality ?? "?";
+                    var segCabin = desc?.Segments?.FirstOrDefault()?.Segment.CabinCode ?? "?";
+                    var inlineCabin = fc.Segments?.FirstOrDefault()?.Segment?.CabinCode ?? "?";
+                    return $"FC[{idx}] ref={fc.Ref} dir={descDir} cabin={descCabin} segCabin={segCabin} inlineCabin={inlineCabin}";
+                });
+                _logger.LogDebug("Itin {ItinId} fare component cabins: {FcDetails}",
+                    itin.Id, string.Join(" | ", fcDetails));
+            }
+        }
+
         // Emit one enriched itinerary per branded fare variant
         for (var pricingIdx = 0; pricingIdx < itin.PricingInformation.Count; pricingIdx++)
         {
@@ -210,7 +231,10 @@ public class BfmResponseParser : IBfmResponseParser
             legs[i].ConnectionTimeToNextMinutes = connMinutes;
         }
 
-        // Extract booking class, cabin, fare basis, seats, meal from fare components
+        // Extract booking class, cabin, fare basis, seats, meal from fare components.
+        // For mixed-cabin itineraries (e.g. Business outbound + Economy return),
+        // fare components are ordered by leg: FC[0] → leg 0, FC[1] → leg 1, etc.
+        // We use legIndex to pick the correct fare component for this segment.
         var bookingClass = "";
         var cabinCode = "";
         var fareBasisCode = "";
@@ -221,51 +245,103 @@ public class BfmResponseParser : IBfmResponseParser
         var passengerInfo = fare.PassengerInfoList.FirstOrDefault()?.PassengerInfo;
         if (passengerInfo?.FareComponents != null)
         {
-            foreach (var fcRef in passengerInfo.FareComponents)
+            // Try to extract from the fare component matching this leg index first.
+            // In BFM GIR, fare components are ordered per direction (FROM=outbound, TO=return).
+            var orderedFcs = passengerInfo.FareComponents.ToList();
+
+            // Primary: use the fare component at legIndex if available
+            if (legIndex < orderedFcs.Count)
             {
-                if (!lookups.FareComponents.TryGetValue(fcRef.Ref, out var fareComp))
-                    continue;
-
-                if (string.IsNullOrEmpty(fareBasisCode))
-                    fareBasisCode = fareComp.FareBasisCode;
-
-                // Get booking details from the fare component's segments
-                if (fareComp.Segments != null)
+                var targetFcRef = orderedFcs[legIndex];
+                if (lookups.FareComponents.TryGetValue(targetFcRef.Ref, out var targetFareComp))
                 {
-                    foreach (var seg in fareComp.Segments)
+                    fareBasisCode = targetFareComp.FareBasisCode;
+
+                    // Use descriptor-level cabin field first (most reliable for mixed-cabin)
+                    if (!string.IsNullOrEmpty(targetFareComp.Cabin))
+                        cabinCode = targetFareComp.Cabin;
+
+                    // Get booking details from the fare component's segments
+                    if (targetFareComp.Segments != null)
                     {
-                        if (string.IsNullOrEmpty(bookingClass))
+                        foreach (var seg in targetFareComp.Segments)
                         {
-                            bookingClass = seg.Segment.BookingCode;
-                            cabinCode = seg.Segment.CabinCode;
-                            seatsAvailable = seg.Segment.SeatsAvailable;
+                            if (string.IsNullOrEmpty(bookingClass))
+                            {
+                                bookingClass = seg.Segment.BookingCode;
+                                if (string.IsNullOrEmpty(cabinCode))
+                                    cabinCode = seg.Segment.CabinCode;
+                                seatsAvailable = seg.Segment.SeatsAvailable;
+                            }
                         }
                     }
-                }
 
-                // Also check inline segment booking details
-                if (fcRef.Segments != null)
-                {
-                    foreach (var seg in fcRef.Segments)
+                    // Also check inline segment booking details
+                    if (targetFcRef.Segments != null)
                     {
-                        if (seg.Segment != null && string.IsNullOrEmpty(bookingClass))
+                        foreach (var seg in targetFcRef.Segments)
                         {
-                            bookingClass = seg.Segment.BookingCode;
-                            cabinCode = seg.Segment.CabinCode;
-                            seatsAvailable = seg.Segment.SeatsAvailable;
-                            mealCode = seg.Segment.MealCode;
+                            if (seg.Segment != null && string.IsNullOrEmpty(bookingClass))
+                            {
+                                bookingClass = seg.Segment.BookingCode;
+                                if (string.IsNullOrEmpty(cabinCode))
+                                    cabinCode = seg.Segment.CabinCode;
+                                seatsAvailable = seg.Segment.SeatsAvailable;
+                                mealCode = seg.Segment.MealCode;
+                            }
                         }
                     }
-                }
 
-                // Resolve brand info (inline brand data + features from itinerary-level refs)
-                if (brandInfo == null && fareComp.Brand != null)
+                    // Resolve brand info
+                    if (targetFareComp.Brand != null)
+                        brandInfo = ResolveBrand(targetFareComp.Brand, targetFcRef.BrandFeatures, lookups);
+                }
+            }
+
+            // Fallback: if we still don't have booking details, scan all fare components
+            if (string.IsNullOrEmpty(bookingClass))
+            {
+                foreach (var fcRef in orderedFcs)
                 {
-                    brandInfo = ResolveBrand(fareComp.Brand, fcRef.BrandFeatures, lookups);
-                }
+                    if (!lookups.FareComponents.TryGetValue(fcRef.Ref, out var fareComp))
+                        continue;
 
-                if (!string.IsNullOrEmpty(bookingClass))
-                    break;
+                    if (string.IsNullOrEmpty(fareBasisCode))
+                        fareBasisCode = fareComp.FareBasisCode;
+
+                    if (fareComp.Segments != null)
+                    {
+                        foreach (var seg in fareComp.Segments)
+                        {
+                            if (string.IsNullOrEmpty(bookingClass))
+                            {
+                                bookingClass = seg.Segment.BookingCode;
+                                cabinCode = seg.Segment.CabinCode;
+                                seatsAvailable = seg.Segment.SeatsAvailable;
+                            }
+                        }
+                    }
+
+                    if (fcRef.Segments != null)
+                    {
+                        foreach (var seg in fcRef.Segments)
+                        {
+                            if (seg.Segment != null && string.IsNullOrEmpty(bookingClass))
+                            {
+                                bookingClass = seg.Segment.BookingCode;
+                                cabinCode = seg.Segment.CabinCode;
+                                seatsAvailable = seg.Segment.SeatsAvailable;
+                                mealCode = seg.Segment.MealCode;
+                            }
+                        }
+                    }
+
+                    if (brandInfo == null && fareComp.Brand != null)
+                        brandInfo = ResolveBrand(fareComp.Brand, fcRef.BrandFeatures, lookups);
+
+                    if (!string.IsNullOrEmpty(bookingClass))
+                        break;
+                }
             }
         }
 
