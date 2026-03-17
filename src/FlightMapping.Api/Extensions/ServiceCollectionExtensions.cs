@@ -39,6 +39,11 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IItineraryScorer, ItineraryScorer>();
         services.AddScoped<ISearchOrchestrator, SearchOrchestrator>();
 
+        // Split PNR services
+        services.AddSingleton<IWaterfallCalculator, WaterfallCalculator>();
+        services.AddSingleton<ISplitPnrDetector, SplitPnrDetector>();
+        services.AddSingleton<ISplitPnrAnalyzer, SplitPnrAnalyzer>();
+
         return services;
     }
 }

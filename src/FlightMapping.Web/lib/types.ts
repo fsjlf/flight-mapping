@@ -58,6 +58,7 @@ export interface SearchResponse {
   classification: TripClassification;
   itineraries: EnrichedItinerary[];
   metadata: SearchMetadata;
+  splitPnrOpportunities?: SplitPnrDetection[];
 }
 
 export interface TripClassification {
@@ -266,4 +267,127 @@ export interface SearchHistoryExport {
   exportedAt: string;
   sessionSearchCount: number;
   searches: SearchHistoryEntry[];
+}
+
+// --- Split PNR / Waterfall Types ---
+
+export interface SplitPnrDetection {
+  opportunityDetected: boolean;
+  flightKey: string;
+  singlePaxPrice: number;
+  singlePaxRbd: string;
+  groupPricePerPerson: number;
+  groupRbd: string;
+  deltaPerPerson: number;
+  totalPassengers: number;
+  minEstimatedSavings: number;
+  maxEstimatedSavings: number;
+  savingsBadge: "green" | "yellow" | "none";
+  cheapSeatsAvailable?: number; // exact auth cap from incremental probing
+}
+
+export interface FareClassInfo {
+  rbd: string;
+  authCap: number;
+  farePerPerson: number;
+  fareBasisCode: string;
+  cabin: CabinClass;
+  brandName?: string;
+  rulesSummary?: string;
+}
+
+export interface GroupFare {
+  rbd: string;
+  farePerPerson: number;
+  total: number;
+}
+
+export interface WaterfallInput {
+  cabinPhysicalSeats: number;
+  totalPassengers: number;
+  fareClasses: FareClassInfo[];
+  groupFare: GroupFare;
+}
+
+export interface WaterfallAllocation {
+  rbd: string;
+  count: number;
+  farePerPerson: number;
+  subtotal: number;
+  brandName?: string;
+  rulesSummary?: string;
+  fareBasisCode?: string;
+}
+
+export interface ClassSnapshot {
+  rbd: string;
+  authRemaining: number;
+  physicalRemaining: number;
+  effectiveAvailable: number;
+  fare: number;
+  bindingConstraint: "cap" | "physical" | "both";
+}
+
+export interface WaterfallSnapshot {
+  label: string;
+  physicalRemaining: number;
+  classes: ClassSnapshot[];
+}
+
+export interface WaterfallResult {
+  feasible: boolean;
+  failureReason?: string;
+  allocations: WaterfallAllocation[];
+  totalCost: number;
+  groupCost: number;
+  savings: number;
+  savingsPercent: number;
+  snapshots: WaterfallSnapshot[];
+}
+
+export interface PriceBreakpoint {
+  passengerCount: number;
+  rbd: string;
+  pricePerPerson: number;
+  inferredAuthCap: number;
+}
+
+export interface PnrGroup {
+  pnrNumber: number;
+  rbd: string;
+  passengerCount: number;
+  farePerPerson: number;
+  subtotal: number;
+  brandName?: string;
+  rulesSummary?: string;
+}
+
+export interface SingleBookingOption {
+  rbd: string;
+  pricePerPerson: number;
+  total: number;
+  brandName?: string;
+  rulesSummary?: string;
+}
+
+export interface SplitBookingOption {
+  pnrs: PnrGroup[];
+  total: number;
+  averagePerPerson: number;
+}
+
+export interface SplitPnrAnalysis {
+  flightKey: string;
+  carrier: string;
+  route: string;
+  cabin: CabinClass;
+  totalPassengers: number;
+  singleBooking: SingleBookingOption;
+  recommendedSplit: SplitBookingOption;
+  waterfall: WaterfallResult;
+  savings: number;
+  savingsPercent: number;
+  averagePricePerPerson: number;
+  tradeOffs: string[];
+  priceBreakpoints: PriceBreakpoint[];
 }

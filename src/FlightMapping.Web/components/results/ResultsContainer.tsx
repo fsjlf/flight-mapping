@@ -1,9 +1,9 @@
 "use client";
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { SearchResponse, SegmentInput } from "@/lib/types";
+import { SearchResponse, SegmentInput, SplitPnrDetection, EnrichedItinerary } from "@/lib/types";
 import { formatCurrency } from "@/lib/formatters";
 import { groupItineraries, LinkedLegGroup } from "@/lib/itineraryGrouping";
-import { groupByFlight } from "@/lib/itineraryGrouping2";
+import { groupByFlight, ItineraryGroup } from "@/lib/itineraryGrouping2";
 import { FilterState, DEFAULT_FILTER_STATE } from "@/lib/filterTypes";
 import { filterAndSort, filterAndSortSmartPackages, computeMinStopsPerSeg, extractAirlines } from "@/lib/filterItineraries";
 import LoadingSpinner from "../ui/LoadingSpinner";
@@ -11,6 +11,71 @@ import FilterBar from "./FilterBar";
 import RoundTripList from "./RoundTripList";
 import MixMatchPanel from "./MixMatchPanel";
 import ItineraryCard from "./ItineraryCard";
+
+/**
+ * Client-side split PNR detection.
+ * When a flight group has fare variants at different prices, the cheapest variant
+ * likely has limited seats (otherwise the GDS would have priced everyone there).
+ * We flag the price spread as a split PNR opportunity.
+ */
+function detectSplitOpportunities(
+  groups: ItineraryGroup[],
+  totalPax: number,
+): SplitPnrDetection[] {
+  if (totalPax < 2) return [];
+
+  const detections: SplitPnrDetection[] = [];
+
+  for (const group of groups) {
+    if (group.variants.length === 0) continue;
+
+    const allFares = [group.primary, ...group.variants].sort(
+      (a, b) => a.pricing.pricePerAdult - b.pricing.pricePerAdult
+    );
+
+    const cheapest = allFares[0];
+    const mostExpensive = allFares[allFares.length - 1];
+
+    // Need a meaningful price spread
+    const delta = mostExpensive.pricing.pricePerAdult - cheapest.pricing.pricePerAdult;
+    if (delta <= 0) continue;
+
+    // Estimate: at least 1 cheap seat, up to N-1
+    const minSavings = delta;
+    const maxSavings = delta * (totalPax - 1);
+    const totalGroupCost = mostExpensive.pricing.pricePerAdult * totalPax;
+    const savingsPerPerson = maxSavings / totalPax;
+    const maxPct = totalGroupCost > 0 ? (maxSavings / totalGroupCost) * 100 : 0;
+
+    // Suppress trivial
+    if (savingsPerPerson < 50 && maxPct < 3) continue;
+
+    const badge: "green" | "yellow" | "none" =
+      savingsPerPerson >= 100 || maxPct >= 10
+        ? "green"
+        : savingsPerPerson >= 50 || maxPct >= 5
+        ? "yellow"
+        : "none";
+
+    if (badge === "none") continue;
+
+    detections.push({
+      opportunityDetected: true,
+      flightKey: group.flightKey,
+      singlePaxPrice: cheapest.pricing.pricePerAdult,
+      singlePaxRbd: cheapest.segments[0]?.bookingClass ?? "?",
+      groupPricePerPerson: mostExpensive.pricing.pricePerAdult,
+      groupRbd: mostExpensive.segments[0]?.bookingClass ?? "?",
+      deltaPerPerson: delta,
+      totalPassengers: totalPax,
+      minEstimatedSavings: minSavings,
+      maxEstimatedSavings: maxSavings,
+      savingsBadge: badge,
+    });
+  }
+
+  return detections.sort((a, b) => b.maxEstimatedSavings - a.maxEstimatedSavings);
+}
 
 interface Props {
   response: SearchResponse | null;
@@ -20,6 +85,7 @@ interface Props {
   onExportHistory?: () => void;
   searchHistoryCount?: number;
   onOpenBuilder?: () => void;
+  totalPassengers?: number;
 }
 
 type ResultTab = "roundtrip" | "mixmatch";
@@ -32,6 +98,7 @@ export default function ResultsContainer({
   onExportHistory,
   searchHistoryCount,
   onOpenBuilder,
+  totalPassengers,
 }: Props) {
   const [activeTab, setActiveTab] = useState<ResultTab>("roundtrip");
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTER_STATE);
@@ -72,7 +139,7 @@ export default function ResultsContainer({
 
   if (!response) return null;
 
-  const { itineraries, metadata, classification } = response;
+  const { itineraries, metadata, classification, splitPnrOpportunities } = response;
 
   if (itineraries.length === 0) {
     return (
@@ -142,6 +209,14 @@ export default function ResultsContainer({
     min: Math.min(...durations),
     max: Math.max(...durations),
   };
+
+  // Split PNR: only use backend-provided detections from incremental probing.
+  // Client-side detection is disabled — BFM seatsAvailable reflects physical seats,
+  // not auth caps. Only the backend can probe 1, 2, 3...N pax to find real breakpoints.
+  const splitDetections: SplitPnrDetection[] =
+    splitPnrOpportunities && splitPnrOpportunities.length > 0
+      ? splitPnrOpportunities
+      : [];
 
   return (
     <div>
@@ -279,7 +354,7 @@ export default function ResultsContainer({
 
           {/* Tab content */}
           {activeTab === "roundtrip" ? (
-            <RoundTripList itineraries={filteredSingleTickets} minStopsPerSeg={rtMinStops} />
+            <RoundTripList itineraries={filteredSingleTickets} minStopsPerSeg={rtMinStops} splitPnrDetections={splitDetections} />
           ) : (
             <MixMatchPanel
               legs={filteredByLeg}
@@ -303,9 +378,12 @@ export default function ResultsContainer({
             searchSegments={searchSegments}
           />
           <div className="space-y-3">
-            {groupByFlight(filterAndSort(itineraries, filters)).map((group) => (
-              <ItineraryCard key={group.flightKey} itinerary={group.primary} variants={group.variants} />
-            ))}
+            {groupByFlight(filterAndSort(itineraries, filters)).map((group) => {
+              const det = splitDetections.find((d) => d.flightKey === group.flightKey);
+              return (
+                <ItineraryCard key={group.flightKey} itinerary={group.primary} variants={group.variants} splitPnrDetection={det} />
+              );
+            })}
           </div>
         </>
       )}

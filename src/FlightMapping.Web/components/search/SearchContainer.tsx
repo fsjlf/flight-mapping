@@ -78,6 +78,7 @@ export default function SearchContainer() {
           onExportHistory={handleExportHistory}
           searchHistoryCount={search.searchHistory.length}
           onOpenBuilder={() => setView("builder")}
+          totalPassengers={search.passengers.adults + search.passengers.children + search.passengers.infantsWithSeat}
         />
       </div>
     );

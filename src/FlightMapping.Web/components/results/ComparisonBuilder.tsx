@@ -6,7 +6,10 @@ import {
   PassengerConfig,
   EnrichedItinerary,
   EnrichedSegment,
+  SplitPnrDetection,
+  SplitPnrAnalysis,
 } from "@/lib/types";
+import SplitPnrPanel from "../split-pnr/SplitPnrPanel";
 import {
   transformToStrategyModel,
   buildSystemPrompt,
@@ -413,6 +416,8 @@ function OptionCard({
   isAISuggested,
   isCheapest,
   priceVsCheapest,
+  totalPassengers,
+  backendSplitDetection,
 }: {
   option: Option;
   color: string;
@@ -422,9 +427,85 @@ function OptionCard({
   isAISuggested?: boolean;
   isCheapest?: boolean;
   priceVsCheapest?: number;
+  totalPassengers?: number;
+  backendSplitDetection?: SplitPnrDetection | null;
 }) {
   const [faresOpen, setFaresOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [showSplitPanel, setShowSplitPanel] = useState(false);
+
+  // Use backend-provided split PNR detection (from 1-pax probing)
+  const splitDetection: SplitPnrDetection | null = backendSplitDetection ?? null;
+
+  // Build analysis for the panel from backend detection data
+  const splitAnalysis = useMemo((): SplitPnrAnalysis | null => {
+    if (!splitDetection) return null;
+    const pax = totalPassengers ?? 2;
+    const groupTotal = splitDetection.groupPricePerPerson * pax;
+    // Use exact auth cap from incremental probing when available
+    const cheapCount = splitDetection.cheapSeatsAvailable ?? 1;
+    const expensiveCount = pax - cheapCount;
+    const splitTotal = splitDetection.singlePaxPrice * cheapCount + splitDetection.groupPricePerPerson * expensiveCount;
+    const savings = groupTotal - splitTotal;
+
+    const cabin = option.variants[0]?.cabin || "Economy";
+    return {
+      flightKey: option.flightKey,
+      carrier: option.carrier,
+      route: option.segments.map((s) => s.origin).join("-") + "-" + (option.segments[option.segments.length - 1]?.destination || ""),
+      cabin: (cabin as "Economy" | "PremiumEconomy" | "Business" | "First") || "Economy",
+      totalPassengers: pax,
+      singleBooking: {
+        rbd: splitDetection.groupRbd,
+        pricePerPerson: splitDetection.groupPricePerPerson,
+        total: groupTotal,
+      },
+      recommendedSplit: {
+        pnrs: [
+          {
+            pnrNumber: 1,
+            rbd: splitDetection.singlePaxRbd,
+            passengerCount: cheapCount,
+            farePerPerson: splitDetection.singlePaxPrice,
+            subtotal: splitDetection.singlePaxPrice * cheapCount,
+          },
+          {
+            pnrNumber: 2,
+            rbd: splitDetection.groupRbd,
+            passengerCount: expensiveCount,
+            farePerPerson: splitDetection.groupPricePerPerson,
+            subtotal: splitDetection.groupPricePerPerson * expensiveCount,
+          },
+        ],
+        total: splitTotal,
+        averagePerPerson: splitTotal / pax,
+      },
+      waterfall: {
+        feasible: true,
+        allocations: [
+          { rbd: splitDetection.singlePaxRbd, count: cheapCount, farePerPerson: splitDetection.singlePaxPrice, subtotal: splitDetection.singlePaxPrice * cheapCount },
+          { rbd: splitDetection.groupRbd, count: expensiveCount, farePerPerson: splitDetection.groupPricePerPerson, subtotal: splitDetection.groupPricePerPerson * expensiveCount },
+        ],
+        totalCost: splitTotal,
+        groupCost: groupTotal,
+        savings,
+        savingsPercent: groupTotal > 0 ? (savings / groupTotal) * 100 : 0,
+        snapshots: [],
+      },
+      savings,
+      savingsPercent: groupTotal > 0 ? (savings / groupTotal) * 100 : 0,
+      averagePricePerPerson: splitTotal / pax,
+      tradeOffs: [
+        "Separate PNRs require individual management",
+        "No cross-ticket rebooking protection",
+        "Must check in separately for each PNR",
+      ],
+      priceBreakpoints: [
+        { passengerCount: 1, pricePerPerson: splitDetection.singlePaxPrice, rbd: splitDetection.singlePaxRbd, inferredAuthCap: 1 },
+        { passengerCount: pax, pricePerPerson: splitDetection.groupPricePerPerson, rbd: splitDetection.groupRbd, inferredAuthCap: pax },
+      ],
+    };
+  }, [splitDetection, option, totalPassengers]);
   const anyChecked = selectedVariantIndices.size > 0;
   const allChecked = selectedVariantIndices.size === option.variants.length;
 
@@ -763,6 +844,50 @@ function OptionCard({
             </div>
           ))}
         </div>
+      )}
+
+      {/* ── Split PNR Badge (dark theme) ── */}
+      {splitDetection && (
+        <div
+          className="flex items-center gap-[8px] px-3 py-[6px] cursor-pointer"
+          style={{
+            borderTop: "1px solid rgba(255,255,255,0.04)",
+            background: splitDetection.savingsBadge === "green"
+              ? "rgba(16,185,129,0.08)"
+              : "rgba(245,158,11,0.06)",
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowSplitPanel(true);
+          }}
+        >
+          <svg className="w-[14px] h-[14px] shrink-0" fill="none" viewBox="0 0 24 24" stroke={splitDetection.savingsBadge === "green" ? "#10b981" : "#f59e0b"} strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+          </svg>
+          <div className="flex-1 min-w-0">
+            <span className={`text-[9px] font-bold ${splitDetection.savingsBadge === "green" ? "text-emerald-400" : "text-amber-400"}`}>
+              SPLIT PNR — Save up to {pfmt(splitDetection.maxEstimatedSavings)}
+            </span>
+            <span className="text-[8px] text-slate-500 ml-[6px]">
+              {splitDetection.singlePaxRbd} {pfmt(splitDetection.singlePaxPrice)}/pax vs {splitDetection.groupRbd} {pfmt(splitDetection.groupPricePerPerson)}/pax
+            </span>
+          </div>
+          <span className={`text-[7px] font-bold tracking-wider px-[5px] py-[2px] rounded-[3px] ${
+            splitDetection.savingsBadge === "green"
+              ? "bg-emerald-400/15 text-emerald-400 border border-emerald-400/25"
+              : "bg-amber-400/15 text-amber-400 border border-amber-400/25"
+          }`}>
+            VIEW
+          </span>
+        </div>
+      )}
+
+      {/* Split PNR Panel Modal */}
+      {showSplitPanel && splitAnalysis && (
+        <SplitPnrPanel
+          analysis={splitAnalysis}
+          onClose={() => setShowSplitPanel(false)}
+        />
       )}
     </div>
   );
@@ -4209,6 +4334,19 @@ export default function ComparisonBuilder({
 
   const systemPrompt = useMemo(() => buildSystemPrompt(model), [model]);
 
+  // Build split PNR detection lookup from backend probing results
+  const splitDetectionMap = useMemo(() => {
+    const map = new Map<string, SplitPnrDetection>();
+    if (response.splitPnrOpportunities) {
+      for (const det of response.splitPnrOpportunities) {
+        if (det.opportunityDetected) {
+          map.set(det.flightKey, det);
+        }
+      }
+    }
+    return map;
+  }, [response.splitPnrOpportunities]);
+
   // UI state
   const [tab, setTab] = useState(0);
   const [activeSlots, setActiveSlots] = useState<Record<string, string>>(() => {
@@ -5021,6 +5159,8 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
                     isAISuggested={isAISuggestedOpt(strategy.id, activeSlot, opt.id)}
                     isCheapest={isCheapest}
                     priceVsCheapest={delta}
+                    totalPassengers={passengers.adults + passengers.children + passengers.infantsWithSeat}
+                    backendSplitDetection={splitDetectionMap.get(opt.flightKey) ?? null}
                   />
                 </div>
               );

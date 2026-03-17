@@ -6,6 +6,7 @@ using FlightMapping.Api.Models.Sabre.Response;
 using FlightMapping.Api.Models.Search.Input;
 using FlightMapping.Api.Models.Search.Internal;
 using FlightMapping.Api.Models.Search.Output;
+using FlightMapping.Api.Models.SplitPnr;
 
 public class SearchOrchestrator : ISearchOrchestrator
 {
@@ -42,6 +43,7 @@ public class SearchOrchestrator : ISearchOrchestrator
     {
         var stopwatch = Stopwatch.StartNew();
         var searchId = Guid.NewGuid().ToString("N")[..12];
+        var totalSeated = request.Passengers.TotalSeated;
 
         _logger.LogInformation("Starting search {SearchId} with {SegmentCount} segments", searchId, request.Segments.Count);
 
@@ -54,6 +56,14 @@ public class SearchOrchestrator : ISearchOrchestrator
         var plan = _strategyGenerator.GeneratePlan(request, classification);
         _logger.LogInformation("Execution plan: {CallCount} API calls in {WaveCount} waves",
             plan.TotalApiCalls, plan.ExecutionWaves);
+
+        // 2b. If multi-pax, fire a 1-pax probe search in parallel for split PNR detection.
+        // This adds no latency since it runs concurrently with the main search waves.
+        Task<List<EnrichedItinerary>>? splitProbeTask = null;
+        if (totalSeated >= 2)
+        {
+            splitProbeTask = RunSplitPnrProbeAsync(request, classification, cancellationToken);
+        }
 
         // 3. Execute strategies in waves
         var allItineraries = new List<EnrichedItinerary>();
@@ -123,6 +133,62 @@ public class SearchOrchestrator : ISearchOrchestrator
         if (deduplicated.Count > maxResults)
             _logger.LogInformation("Capped results from {Total} to {Max}", deduplicated.Count, maxResults);
 
+        // 8. Split PNR detection with incremental probing
+        List<SplitPnrDetection>? splitOpportunities = null;
+        if (splitProbeTask != null)
+        {
+            try
+            {
+                var probeResults = await splitProbeTask;
+                var initialDetections = DetectSplitOpportunities(ranked, probeResults, totalSeated);
+
+                if (initialDetections.Count > 0 && totalSeated > 2)
+                {
+                    // Incremental probing: fire 2, 3, ... (N-1) pax searches in parallel
+                    // to find exact auth cap breakpoints
+                    _logger.LogInformation(
+                        "Found {Count} initial split opportunities, probing 2..{Max} pax for breakpoints",
+                        initialDetections.Count, totalSeated - 1);
+
+                    var probeTasks = new Dictionary<int, Task<List<EnrichedItinerary>>>();
+                    for (int paxCount = 2; paxCount < totalSeated; paxCount++)
+                    {
+                        probeTasks[paxCount] = RunSplitPnrProbeAsync(request, classification, cancellationToken, paxCount);
+                    }
+                    await Task.WhenAll(probeTasks.Values);
+
+                    // Build pax→(flightCabinKey→cheapestPrice) lookup for each probe count
+                    // Include the 1-pax results we already have
+                    var allProbesByPax = new Dictionary<int, Dictionary<string, (decimal Price, string Rbd)>>
+                    {
+                        [1] = BuildProbePriceLookup(probeResults)
+                    };
+                    foreach (var (paxCount, task) in probeTasks)
+                    {
+                        try
+                        {
+                            allProbesByPax[paxCount] = BuildProbePriceLookup(await task);
+                        }
+                        catch { /* skip failed probes */ }
+                    }
+
+                    splitOpportunities = DetectSplitOpportunitiesWithBreakpoints(
+                        ranked, allProbesByPax, totalSeated);
+                }
+                else
+                {
+                    splitOpportunities = initialDetections;
+                }
+
+                if (splitOpportunities.Count > 0)
+                    _logger.LogInformation("Detected {Count} split PNR opportunities with breakpoints", splitOpportunities.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Split PNR probe failed — continuing without detections");
+            }
+        }
+
         stopwatch.Stop();
 
         return new SearchResponse
@@ -130,6 +196,7 @@ public class SearchOrchestrator : ISearchOrchestrator
             SearchId = searchId,
             Classification = classification,
             Itineraries = ranked,
+            SplitPnrOpportunities = splitOpportunities,
             Metadata = new SearchMetadata
             {
                 TotalResults = ranked.Count,
@@ -246,5 +313,244 @@ public class SearchOrchestrator : ISearchOrchestrator
             $"{s.BookingClass}:{s.Cabin}:{s.Brand?.Name ?? ""}"));
 
         return $"{fingerprint}|{itin.ValidatingCarrier}|{fareKey}";
+    }
+
+    /// <summary>
+    /// Fire a probe search with a specific passenger count.
+    /// Default is 1 adult for initial detection.
+    /// </summary>
+    private async Task<List<EnrichedItinerary>> RunSplitPnrProbeAsync(
+        SearchRequest originalRequest,
+        TripClassification classification,
+        CancellationToken cancellationToken,
+        int adultCount = 1)
+    {
+        var probeRequest = new SearchRequest
+        {
+            Segments = originalRequest.Segments,
+            Passengers = new PassengerConfig { Adults = adultCount },
+            Preferences = originalRequest.Preferences
+        };
+
+        var probePlan = _strategyGenerator.GeneratePlan(probeRequest, classification);
+
+        // Only run the first strategy (cheapest route) to keep it fast
+        var firstStrategy = probePlan.Strategies.FirstOrDefault();
+        if (firstStrategy == null) return new List<EnrichedItinerary>();
+
+        var firstCall = firstStrategy.ApiCalls.FirstOrDefault();
+        if (firstCall == null) return new List<EnrichedItinerary>();
+
+        _logger.LogInformation("Split PNR probe: firing {PaxCount}-pax search for comparison", adultCount);
+
+        try
+        {
+            var (itineraries, _, _) = await ExecuteApiCall(firstStrategy, firstCall, probeRequest, cancellationToken);
+
+            // Drop broken pricing
+            itineraries.RemoveAll(i => i.Pricing.TotalPrice <= 0);
+
+            _logger.LogInformation("Split PNR probe: got {Count} itineraries for {PaxCount}-pax", itineraries.Count, adultCount);
+            return itineraries;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Split PNR 1-pax probe failed");
+            return new List<EnrichedItinerary>();
+        }
+    }
+
+    /// <summary>
+    /// Compare N-pax search results with 1-pax probe results.
+    /// For each flight+cabin where 1-pax is cheaper, emit a split PNR detection.
+    /// </summary>
+    private static List<SplitPnrDetection> DetectSplitOpportunities(
+        List<EnrichedItinerary> mainResults,
+        List<EnrichedItinerary> probeResults,
+        int totalPax)
+    {
+        if (probeResults.Count == 0) return new List<SplitPnrDetection>();
+
+        // Build lookup: flightFingerprint+cabin → cheapest 1-pax price
+        var probePrices = new Dictionary<string, (decimal Price, string Rbd, string BrandName)>();
+        foreach (var itin in probeResults)
+        {
+            var key = BuildFlightCabinKey(itin);
+            var price = itin.Pricing.PricePerAdult;
+            if (!probePrices.TryGetValue(key, out var existing) || price < existing.Price)
+            {
+                probePrices[key] = (price, itin.Segments[0].BookingClass, itin.Segments[0].Brand?.Name ?? "");
+            }
+        }
+
+        // For each flight in N-pax results, check if 1-pax was cheaper in the same cabin
+        var detections = new Dictionary<string, SplitPnrDetection>();
+        foreach (var itin in mainResults)
+        {
+            var key = BuildFlightCabinKey(itin);
+            if (!probePrices.TryGetValue(key, out var probe)) continue;
+
+            var groupPrice = itin.Pricing.PricePerAdult;
+            var delta = groupPrice - probe.Price;
+            if (delta <= 0) continue;
+
+            // Use flight key (without cabin) for dedup — one detection per physical flight
+            var flightKey = BuildFlightKey(itin);
+            if (detections.ContainsKey(flightKey))
+            {
+                // Keep the one with bigger savings
+                if (delta <= detections[flightKey].DeltaPerPerson) continue;
+            }
+
+            // Conservative estimate: at least 1 passenger can get cheap fare, up to half the group
+            var minCheapSeats = 1;
+            var maxCheapSeats = Math.Max(1, totalPax / 2); // conservative: assume at most half can get cheap
+            var minSavings = delta * minCheapSeats;
+            var maxSavings = delta * maxCheapSeats;
+            var totalGroupCost = groupPrice * totalPax;
+            var maxPct = totalGroupCost > 0 ? (maxSavings / totalGroupCost) * 100 : 0;
+
+            // Suppress trivial savings
+            if (minSavings < 20 && maxPct < 2) continue;
+
+            var badge = maxPct >= 8 ? "green" : maxPct >= 3 ? "yellow" : "none";
+            if (badge == "none") continue;
+
+            detections[flightKey] = new SplitPnrDetection
+            {
+                OpportunityDetected = true,
+                FlightKey = flightKey,
+                SinglePaxPrice = probe.Price,
+                SinglePaxRbd = probe.Rbd,
+                GroupPricePerPerson = groupPrice,
+                GroupRbd = itin.Segments[0].BookingClass,
+                DeltaPerPerson = delta,
+                TotalPassengers = totalPax,
+                MinEstimatedSavings = minSavings,
+                MaxEstimatedSavings = maxSavings,
+                SavingsBadge = badge,
+            };
+        }
+
+        return detections.Values
+            .OrderByDescending(d => d.MaxEstimatedSavings)
+            .ToList();
+    }
+
+    /// <summary>Build a lookup of flightCabinKey → cheapest price for a set of probe results.</summary>
+    private static Dictionary<string, (decimal Price, string Rbd)> BuildProbePriceLookup(
+        List<EnrichedItinerary> probeResults)
+    {
+        var lookup = new Dictionary<string, (decimal Price, string Rbd)>();
+        foreach (var itin in probeResults)
+        {
+            var key = BuildFlightCabinKey(itin);
+            var price = itin.Pricing.PricePerAdult;
+            if (!lookup.TryGetValue(key, out var existing) || price < existing.Price)
+            {
+                lookup[key] = (price, itin.Segments[0].BookingClass);
+            }
+        }
+        return lookup;
+    }
+
+    /// <summary>
+    /// Detect split PNR opportunities using incremental probe data to find exact breakpoints.
+    /// For each flight+cabin, walks from 1 pax upward to find where the price jumps.
+    /// </summary>
+    private static List<SplitPnrDetection> DetectSplitOpportunitiesWithBreakpoints(
+        List<EnrichedItinerary> mainResults,
+        Dictionary<int, Dictionary<string, (decimal Price, string Rbd)>> probesByPax,
+        int totalPax)
+    {
+        if (!probesByPax.ContainsKey(1)) return new List<SplitPnrDetection>();
+
+        var detections = new Dictionary<string, SplitPnrDetection>();
+
+        foreach (var itin in mainResults)
+        {
+            var cabinKey = BuildFlightCabinKey(itin);
+            var flightKey = BuildFlightKey(itin);
+            var groupPrice = itin.Pricing.PricePerAdult;
+
+            // Get 1-pax price for this flight+cabin
+            if (!probesByPax[1].TryGetValue(cabinKey, out var probe1)) continue;
+            if (probe1.Price >= groupPrice) continue; // no opportunity
+
+            // Walk upward to find the breakpoint where price jumps
+            var cheapPrice = probe1.Price;
+            var cheapRbd = probe1.Rbd;
+            var cheapSeats = 1; // at least 1 seat at cheap price
+
+            for (int pax = 2; pax < totalPax; pax++)
+            {
+                if (!probesByPax.TryGetValue(pax, out var probeN)) break;
+                if (!probeN.TryGetValue(cabinKey, out var probePrice)) break;
+
+                // If this pax count still gets the cheap price (within $5 tolerance for rounding)
+                if (Math.Abs(probePrice.Price - cheapPrice) < 5m)
+                {
+                    cheapSeats = pax;
+                }
+                else
+                {
+                    // Price jumped — this is the breakpoint
+                    break;
+                }
+            }
+
+            var expensiveSeats = totalPax - cheapSeats;
+            var savings = (groupPrice - cheapPrice) * cheapSeats;
+            var totalGroupCost = groupPrice * totalPax;
+            var pct = totalGroupCost > 0 ? (savings / totalGroupCost) * 100 : 0;
+
+            if (savings < 20) continue;
+            var badge = pct >= 8 ? "green" : pct >= 3 ? "yellow" : "none";
+            if (badge == "none") continue;
+
+            // Dedup: keep biggest savings per physical flight
+            if (detections.TryGetValue(flightKey, out var existing) && existing.MaxEstimatedSavings >= savings)
+                continue;
+
+            detections[flightKey] = new SplitPnrDetection
+            {
+                OpportunityDetected = true,
+                FlightKey = flightKey,
+                SinglePaxPrice = cheapPrice,
+                SinglePaxRbd = cheapRbd,
+                GroupPricePerPerson = groupPrice,
+                GroupRbd = itin.Segments[0].BookingClass,
+                DeltaPerPerson = groupPrice - cheapPrice,
+                TotalPassengers = totalPax,
+                MinEstimatedSavings = savings, // exact: cheapSeats at cheap price
+                MaxEstimatedSavings = savings, // same: we now know exact breakpoint
+                SavingsBadge = badge,
+                // Store breakpoint info in existing fields
+                CheapSeatsAvailable = cheapSeats,
+            };
+        }
+
+        return detections.Values
+            .OrderByDescending(d => d.MaxEstimatedSavings)
+            .ToList();
+    }
+
+    /// <summary>Flight fingerprint + cabin for matching 1-pax vs N-pax within same cabin class.</summary>
+    private static string BuildFlightCabinKey(EnrichedItinerary itin)
+    {
+        var flights = BuildFlightKey(itin);
+        var cabin = string.Join("+", itin.Segments.Select(s => s.Cabin.ToString()));
+        return $"{flights}#{cabin}";
+    }
+
+    /// <summary>
+    /// Flight fingerprint matching the frontend format from itineraryGrouping2.ts:
+    /// operatingCarrier + operatingFlightNumber + "-" + ISO departureTime, joined by "|"
+    /// Must match JSON serialization format: "2026-03-21T17:59:00"
+    /// </summary>
+    private static string BuildFlightKey(EnrichedItinerary itin)
+    {
+        return string.Join("|", itin.Segments.SelectMany(s =>
+            s.Legs.Select(l => $"{l.OperatingCarrier}{l.OperatingFlightNumber}-{l.DepartureTime:yyyy-MM-ddTHH:mm:ss}")));
     }
 }
