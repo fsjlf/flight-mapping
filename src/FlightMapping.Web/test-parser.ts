@@ -20,7 +20,9 @@ const samples = [
   `Can you check what Delta has from Atlanta to Paris on May 17th? Business class, one way.`,
   `Washington DC to Mumbai, departing March 31st, returning April 14th. Economy on the way out, business on the return.`,
   `Quickest way to get from Minneapolis to London on July 9th, don't care about the airline, business class.`,
-  `I want to fly Chicago to Cape Town on August 3rd, returning August 20th — economy is fine but I'd upgrade to premium economy if the price difference isn't crazy.`,
+  // Bonus: compact date range
+  `March 20-30 New York to London`,
+  `SFO to Tokyo March 15-28, business class`,
 ];
 
 console.log("=".repeat(100));
@@ -61,5 +63,5 @@ for (let i = 0; i < samples.length; i++) {
 }
 
 console.log(`\n${"=".repeat(100)}`);
-console.log(`RESULTS: ${pass}/20 passed, ${fail}/20 failed`);
+console.log(`RESULTS: ${pass}/${samples.length} passed, ${fail}/${samples.length} failed`);
 console.log("=".repeat(100));

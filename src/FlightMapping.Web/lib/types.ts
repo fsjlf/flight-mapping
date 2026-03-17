@@ -84,6 +84,7 @@ export interface EnrichedItinerary {
   eTicketable: boolean;
   governingCarriers?: string;
   pricingSource: string;
+  coveredSegmentIndices: number[];
 }
 
 export interface EnrichedSegment {
@@ -182,4 +183,86 @@ export interface StrategyResult {
   durationMs: number;
   success: boolean;
   error?: string;
+}
+
+// --- Hybrid Package Breakdown ---
+export interface HybridPackageBreakdown {
+  totalPerAdult: number;
+  packagePerAdult: number;
+  packageLabel: string;
+  owLegs: { label: string; pricePerAdult: number }[];
+}
+
+// --- Slim Export Types (for JSON export — optimized for AI conversation) ---
+
+/** Compact segment: no nested legs, no brand features, no tax breakdown */
+export interface SlimSegment {
+  from: string;
+  to: string;
+  depart: string;
+  arrive: string;
+  duration: string;
+  stops: number;
+  carrier: string;
+  operated?: string; // only if different from marketing carrier
+  flight: string;
+  cabin: string;
+  bookingClass: string;
+  equipment: string;
+  brand?: string; // brand name only (no features array)
+}
+
+/** Summary of one fare option for a flight combo */
+export interface SlimFare {
+  name: string; // brand name or booking class
+  perAdult: number;
+  refundable: boolean;
+}
+
+/** One unique flight combination with all fare options summarized */
+export interface SlimItinerary {
+  segments: SlimSegment[];
+  totalDuration: string;
+  price: number; // cheapest fare, per adult
+  currency: string;
+  score: number;
+  carrier: string; // validating carrier
+  refundable: boolean;
+  fares: SlimFare[]; // all distinct fare options for this flight combo
+}
+
+export interface SearchHistoryEntry {
+  searchId: string;
+  timestamp: string;
+  request: {
+    segments: SegmentInput[];
+    passengers: PassengerConfig;
+    preferences?: SearchPreferences;
+  };
+  results: {
+    tripType: string;
+    roundTrip: SlimItinerary[];
+    mixAndMatch: {
+      leg: number;
+      route: string;
+      date: string;
+      options: SlimItinerary[];
+    }[];
+    smartPackages: {
+      covers: string;
+      options: SlimItinerary[];
+    }[];
+  };
+  counts: {
+    total: number;
+    roundTrip: number;
+    mixAndMatch: number;
+    smartPackages: number;
+  };
+}
+
+export interface SearchHistoryExport {
+  exportedAt: string;
+  sessionSearchCount: number;
+  searches: SearchHistoryEntry[];
 }

@@ -127,10 +127,134 @@ export function applySorting(
   return sorted;
 }
 
+/**
+ * Compute the minimum achievable stops for each segment position
+ * across a pool of itineraries. Returns an array where
+ * minStops[i] = minimum stops any itinerary has for segment index i.
+ */
+export function computeMinStopsPerSeg(
+  itineraries: EnrichedItinerary[]
+): number[] {
+  if (itineraries.length === 0) return [];
+  const segCount = itineraries[0].segments.length;
+  const mins = new Array(segCount).fill(Infinity);
+  for (const itin of itineraries) {
+    for (let i = 0; i < itin.segments.length; i++) {
+      mins[i] = Math.min(mins[i], itin.segments[i].stops);
+    }
+  }
+  return mins.map((v) => (v === Infinity ? 0 : v));
+}
+
 /** Filter then sort. */
 export function filterAndSort(
   itineraries: EnrichedItinerary[],
   filters: FilterState
 ): EnrichedItinerary[] {
   return applySorting(applyFilters(itineraries, filters), filters.sortBy);
+}
+
+/**
+ * Smart stop filter for linked packages (smart packages).
+ *
+ * Instead of requiring every segment to pass the stop filter,
+ * we compute the minimum achievable stops per segment position
+ * across all itineraries in the group. If the filter is "nonstop"
+ * but no itinerary in the group has 0 stops for segment position N,
+ * we relax the requirement for that position to the minimum available.
+ *
+ * Result: "nonstop" means "nonstop where possible, fewest stops otherwise."
+ */
+export function filterAndSortSmartPackages(
+  itineraries: EnrichedItinerary[],
+  filters: FilterState
+): EnrichedItinerary[] {
+  if (filters.stops === "any" || itineraries.length === 0) {
+    return filterAndSort(itineraries, filters);
+  }
+
+  // Compute minimum stops achievable per segment position
+  const segCount = itineraries[0].segments.length;
+  const minStopsPerSeg: number[] = new Array(segCount).fill(Infinity);
+  for (const itin of itineraries) {
+    for (let i = 0; i < itin.segments.length; i++) {
+      minStopsPerSeg[i] = Math.min(minStopsPerSeg[i], itin.segments[i].stops);
+    }
+  }
+
+  // Derive per-segment allowed stops based on filter + availability
+  const allowedStopsPerSeg: number[] = minStopsPerSeg.map((minAvail) => {
+    if (filters.stops === "nonstop") {
+      // Require nonstop if available, otherwise allow the minimum
+      return Math.max(minAvail, 0);
+    }
+    // "up-to-1": allow ≤1 if available, otherwise allow the minimum
+    return Math.max(minAvail, 0) <= 1 ? 1 : minAvail;
+  });
+
+  // Filter using per-segment allowances for stops, standard rules for everything else
+  const filtered = itineraries.filter((itin) => {
+    // Smart per-segment stops check
+    for (let i = 0; i < itin.segments.length; i++) {
+      if (itin.segments[i].stops > allowedStopsPerSeg[i]) {
+        return false;
+      }
+    }
+
+    // Standard checks (airlines, price, duration, time)
+    if (!itineraryPassesAirlines(itin, filters.airlines)) return false;
+    if (filters.maxPrice !== null && itin.pricing.pricePerAdult > filters.maxPrice) return false;
+    if (filters.maxDurationMinutes !== null && itin.totalDurationMinutes > filters.maxDurationMinutes) return false;
+    for (const [segIdx, windows] of filters.departureTimeWindows) {
+      const seg = itin.segments[segIdx];
+      if (seg && !segmentPassesTimeWindow(seg, windows)) return false;
+    }
+    return true;
+  });
+
+  // Sort with total stops as a tiebreaker for "best" sort
+  return applySortingWithStops(filtered, filters.sortBy);
+}
+
+/** Sort with total stops as a secondary tiebreaker (fewer stops preferred). */
+function applySortingWithStops(
+  itineraries: EnrichedItinerary[],
+  sortBy: SortOption
+): EnrichedItinerary[] {
+  const sorted = [...itineraries];
+  const totalStops = (it: EnrichedItinerary) =>
+    it.segments.reduce((s, seg) => s + seg.stops, 0);
+
+  switch (sortBy) {
+    case "best":
+      sorted.sort((a, b) => {
+        const stopsA = totalStops(a);
+        const stopsB = totalStops(b);
+        if (stopsA !== stopsB) return stopsA - stopsB;
+        return a.rank - b.rank;
+      });
+      break;
+    case "cheapest":
+      sorted.sort((a, b) => {
+        const priceDiff = a.pricing.pricePerAdult - b.pricing.pricePerAdult;
+        if (Math.abs(priceDiff) > 1) return priceDiff;
+        return totalStops(a) - totalStops(b);
+      });
+      break;
+    case "fastest":
+      sorted.sort((a, b) => {
+        const durDiff = a.totalDurationMinutes - b.totalDurationMinutes;
+        if (durDiff !== 0) return durDiff;
+        return totalStops(a) - totalStops(b);
+      });
+      break;
+    case "fewest-stops":
+      sorted.sort((a, b) => {
+        const stopsDiff = totalStops(a) - totalStops(b);
+        if (stopsDiff !== 0) return stopsDiff;
+        return a.rank - b.rank;
+      });
+      break;
+  }
+  return sorted;
 }

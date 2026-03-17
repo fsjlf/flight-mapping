@@ -51,9 +51,6 @@ export function parseNaturalLanguage(input: string): ParseResult {
   // Extract segments
   const segments = extractSegments(text);
 
-  // Apply per-segment cabin overrides from directional context
-  applyDirectionalCabinOverrides(text, segments, cabin);
-
   // Resolve IATA codes and build SegmentInput[]
   const resolvedSegments: SegmentInput[] = [];
   for (const seg of segments) {
@@ -96,7 +93,7 @@ export function parseNaturalLanguage(input: string): ParseResult {
 function extractSegments(text: string): ParsedSegment[] {
   const segments: ParsedSegment[] = [];
 
-  // Phase 1: Try to find a primary route (origin → destination) with dates
+  // Phase 1: Find the primary route (origin → destination)
   const route = extractRoute(text);
   if (!route) return segments;
 
@@ -137,63 +134,138 @@ function extractSegments(text: string): ParsedSegment[] {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Route extraction — find origin and destination
+// Route extraction — validation-based scanning approach
+// Scans for "to" / "from" separators, then validates both sides as airports.
+// No text stripping needed — airport resolution acts as the filter.
 // ────────────────────────────────────────────────────────────────────────────
 
 function extractRoute(text: string): { origin: string; destination: string } | null {
-  // Strip out airline names and cabin/class phrases to avoid them polluting city extraction
-  let cleaned = stripCarrierNames(text);
-  cleaned = stripCabinPhrases(cleaned);
-  cleaned = stripNoisePhrases(cleaned);
+  // Try patterns from most specific to least specific
+  const result =
+    scanFromTo(text) ??
+    scanTo(text) ??
+    scanReversed(text) ??
+    scanFlyingOutOf(text);
+  return result;
+}
 
-  // Pattern 1: "from X to Y" / "X to Y"
-  const fromTo = cleaned.match(
-    /(?:from\s+)(.+?)\s+(?:to|-+>?|=>)\s+(.+?)(?:\s+(?:on|by|departing|leaving|outbound|returning|round\s*trip|one[- ]?way|,|—|-{2,}|\d)|\s*$)/i
+/**
+ * Scan for "from {CITY} to {CITY}" patterns.
+ * e.g. "from New York to Tokyo", "from LAX to Miami", "from SFO to Paris"
+ */
+function scanFromTo(text: string): { origin: string; destination: string } | null {
+  const re = /\bfrom\s+/gi;
+  let fromMatch;
+  while ((fromMatch = re.exec(text)) !== null) {
+    const afterFrom = text.substring(fromMatch.index + fromMatch[0].length);
+    const toMatch = afterFrom.match(/\s+to\s+/i);
+    if (!toMatch || toMatch.index === undefined) continue;
+
+    const originText = afterFrom.substring(0, toMatch.index);
+    const destText = afterFrom.substring(toMatch.index + toMatch[0].length);
+
+    const origin = extractCityFromText(originText, "start");
+    const destination = extractCityFromText(destText, "start");
+
+    if (origin && destination) return { origin, destination };
+  }
+  return null;
+}
+
+/**
+ * Scan for "{CITY} to {CITY}" patterns (without "from").
+ * e.g. "Chicago to London", "JFK to Rome", "Dallas to Amsterdam"
+ */
+function scanTo(text: string): { origin: string; destination: string } | null {
+  const re = /\s+to\s+/gi;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    const before = text.substring(Math.max(0, match.index - 60), match.index);
+    const after = text.substring(match.index + match[0].length);
+
+    const origin = extractCityFromText(before, "end");
+    const destination = extractCityFromText(after, "start");
+
+    if (origin && destination) return { origin, destination };
+  }
+  return null;
+}
+
+/**
+ * Scan for "to {DEST} from {ORIGIN}" reversed patterns.
+ * e.g. "Get me to Singapore from Houston", "fly to Paris from SFO"
+ */
+function scanReversed(text: string): { origin: string; destination: string } | null {
+  const re = /\s+from\s+/gi;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    const before = text.substring(Math.max(0, match.index - 60), match.index);
+    const after = text.substring(match.index + match[0].length);
+
+    const destination = extractCityFromText(before, "end");
+    const origin = extractCityFromText(after, "start");
+
+    if (origin && destination) return { origin, destination };
+  }
+  return null;
+}
+
+/**
+ * Scan for "be in {DEST} ... flying out of {ORIGIN}" patterns.
+ * e.g. "Need to be in Boston by 9am, flying out of DC"
+ */
+function scanFlyingOutOf(text: string): { origin: string; destination: string } | null {
+  const outOfMatch = text.match(
+    /(?:flying|depart(?:ing)?)\s+out\s+of\s+([\w\s]+?)(?:\s*[,;.]|\s+(?:on|to|at|by)\b|\s*$)/i
   );
-  if (fromTo) {
-    const o = cleanCityName(fromTo[1]);
-    const d = cleanCityName(fromTo[2]);
-    if (o && d && resolveAirport(o) && resolveAirport(d)) return { origin: o, destination: d };
+  if (!outOfMatch) return null;
+  const origin = extractCityFromText(outOfMatch[1], "start");
+  if (!origin) return null;
+
+  // Look for destination from "be in Y" / "get to Y" / "arrive in Y"
+  const destMatch = text.match(
+    /(?:be\s+in|get\s+to|arrive\s+(?:in|at))\s+([\w\s]+?)(?:\s+(?:by|on|at|before)\b|\s*[,;.])/i
+  );
+  if (destMatch) {
+    const destination = extractCityFromText(destMatch[1], "start");
+    if (destination) return { origin, destination };
   }
 
-  // Pattern 2: "get me to Y from X" / "flying to Y from X"
-  const toFrom = cleaned.match(
-    /(?:get\s+me\s+to|fly(?:ing)?\s+to|need\s+to\s+(?:get|be)\s+(?:to|in))\s+(.+?)\s+from\s+(.+?)(?:\s+(?:on|by|departing|,|—|-{2,}|\d)|\s*$)/i
-  );
-  if (toFrom) {
-    const o = cleanCityName(toFrom[2]);
-    const d = cleanCityName(toFrom[1]);
-    if (o && d && resolveAirport(o) && resolveAirport(d)) return { origin: o, destination: d };
-  }
+  return null;
+}
 
-  // Pattern 3: "flying (out of|from) X to Y" — more flexible
-  const flyFrom = cleaned.match(
-    /(?:fly(?:ing)?|depart(?:ing)?)\s+(?:out\s+of|from)\s+(.+?)(?:\s+to\s+(.+?))?(?:\s+(?:on|by|,|—|-{2,}|\d)|\s*$)/i
-  );
-  if (flyFrom && flyFrom[2]) {
-    const o = cleanCityName(flyFrom[1]);
-    const d = cleanCityName(flyFrom[2]);
-    if (o && d && resolveAirport(o) && resolveAirport(d)) return { origin: o, destination: d };
-  }
+// ────────────────────────────────────────────────────────────────────────────
+// City extraction from text — sliding window with airport validation
+// ────────────────────────────────────────────────────────────────────────────
 
-  // Pattern 4: "need to be in Y by TIME, flying out of X"
-  const needIn = cleaned.match(
-    /(?:need\s+to\s+be\s+in|arrive\s+(?:in|at))\s+(.+?)\s+(?:by|before|at)\s+.+?(?:flying|from|out\s+of)\s+(.+?)(?:\s*[,.]|\s*$)/i
-  );
-  if (needIn) {
-    const o = cleanCityName(needIn[2]);
-    const d = cleanCityName(needIn[1]);
-    if (o && d && resolveAirport(o) && resolveAirport(d)) return { origin: o, destination: d };
-  }
+/**
+ * Extract a valid city/airport name from a text fragment.
+ * Uses a sliding window of 1-3 words, validated against the airport database.
+ *
+ * @param direction "start" = search from beginning of text, "end" = search from end
+ */
+function extractCityFromText(text: string, direction: "start" | "end"): string | null {
+  const cleaned = text.replace(/[,;—–.!?]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return null;
 
-  // Pattern 5: Broader "from X to Y" allowing dates between
-  const broadFromTo = cleaned.match(
-    /(?:from\s+)?(.+?)\s+(?:to|-+>?|=>)\s+(.+?)(?:\s|,|$)/i
-  );
-  if (broadFromTo) {
-    const o = cleanCityName(broadFromTo[1]);
-    const d = cleanCityName(broadFromTo[2]);
-    if (o && d && resolveAirport(o) && resolveAirport(d)) return { origin: o, destination: d };
+  const words = cleaned.split(/\s+/);
+  const maxOffset = 4; // How far from the edge to search
+
+  if (direction === "start") {
+    for (let start = 0; start < Math.min(maxOffset, words.length); start++) {
+      // Try longer matches first (3, 2, 1 words)
+      for (let len = Math.min(3, words.length - start); len >= 1; len--) {
+        const candidate = words.slice(start, start + len).join(" ");
+        if (resolveAirport(candidate)) return candidate;
+      }
+    }
+  } else {
+    for (let end = words.length; end > Math.max(0, words.length - maxOffset); end--) {
+      for (let len = Math.min(3, end); len >= 1; len--) {
+        const candidate = words.slice(end - len, end).join(" ");
+        if (resolveAirport(candidate)) return candidate;
+      }
+    }
   }
 
   return null;
@@ -209,47 +281,42 @@ interface DatePair {
 }
 
 function extractAllDates(text: string): DatePair {
-  // Strategy: find all date-like tokens, then determine which is outbound vs return
+  // Check for compact same-month range: "March 20-30" or "March 20th-30th"
+  const compactRange = text.match(
+    /\b((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+)(\d{1,2})(?:st|nd|rd|th)?\s*[-–—]\s*(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?\b/i
+  );
+  if (compactRange) {
+    const monthWord = compactRange[1].trim();
+    const d1 = parseDate(`${monthWord} ${compactRange[2]}${compactRange[4] ? " " + compactRange[4] : ""}`);
+    const d2 = parseDate(`${monthWord} ${compactRange[3]}${compactRange[4] ? " " + compactRange[4] : ""}`);
+    if (d1 && d2) return { outbound: d1, return: d2 };
+  }
 
-  // First, check for explicit return date markers
+  // Check for date range: "DATE to DATE" or "DATE - DATE" or "DATE through DATE"
+  const dateRangePattern =
+    /(\w+\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(?:to|through|thru|-|–|—)\s+(\w+\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i;
+  const rangeMatch = text.match(dateRangePattern);
+  if (rangeMatch) {
+    const d1 = parseDate(rangeMatch[1]);
+    const d2 = parseDate(rangeMatch[2]);
+    if (d1 && d2) return { outbound: d1, return: d2 };
+  }
+
+  // Check for explicit return date markers
+  let returnDate: string | null = null;
   const returnDateMatch = text.match(
     /(?:return(?:ing)?|back|inbound|coming\s+(?:back|home))\s+(?:on\s+)?(?:the\s+)?(\w+\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i
   );
+  if (returnDateMatch) returnDate = parseDate(returnDateMatch[1]);
 
   // Check for explicit outbound date markers
+  let outbound: string | null = null;
   const outboundDateMatch = text.match(
     /(?:depart(?:ing)?|outbound|leaving|on)\s+(?:the\s+)?(\w+\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i
   );
+  if (outboundDateMatch) outbound = parseDate(outboundDateMatch[1]);
 
-  // Check for date range patterns: "DATE to DATE" or "DATE - DATE" or "DATE through DATE"
-  const dateRangePattern =
-    /(\w+\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(?:to|through|thru|-|–|—)\s+(\w+\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i;
-
-  const rangeMatch = text.match(dateRangePattern);
-
-  // If we have an explicit range like "February 14th to February 21st"
-  if (rangeMatch) {
-    // Make sure this isn't a city "to" city pattern by checking if both parts parse as dates
-    const d1 = parseDate(rangeMatch[1]);
-    const d2 = parseDate(rangeMatch[2]);
-    if (d1 && d2) {
-      return { outbound: d1, return: d2 };
-    }
-  }
-
-  // Try explicit markers
-  let outbound: string | null = null;
-  let returnDate: string | null = null;
-
-  if (returnDateMatch) {
-    returnDate = parseDate(returnDateMatch[1]);
-  }
-
-  if (outboundDateMatch) {
-    outbound = parseDate(outboundDateMatch[1]);
-  }
-
-  // Collect all date tokens from the text
+  // Fallback: collect all date tokens in order of appearance
   const allDates = findAllDateTokens(text);
 
   if (!outbound && allDates.length > 0) {
@@ -257,14 +324,10 @@ function extractAllDates(text: string): DatePair {
   }
 
   if (!returnDate && allDates.length > 1) {
-    // Second date is return, unless it was already used as outbound
     const candidate = allDates[1];
-    if (candidate !== outbound) {
-      returnDate = candidate;
-    }
+    if (candidate !== outbound) returnDate = candidate;
   }
 
-  // If the text indicates round-trip but we only found one date, there's no return date
   return { outbound, return: returnDate };
 }
 
@@ -272,90 +335,20 @@ function findAllDateTokens(text: string): string[] {
   const results: string[] = [];
   const seen = new Set<string>();
 
-  // Match various date formats in order of appearance
-  const datePatterns = [
-    // ISO: 2026-03-20
-    /\b(\d{4}-\d{2}-\d{2})\b/g,
-    // Month DD[th] [YYYY]: March 20th, March 20 2026
-    /\b((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?)\b/gi,
-    // MM/DD or MM/DD/YYYY
-    /\b(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/g,
-  ];
+  // Collect all date-like tokens in order of appearance using a unified pass
+  const unified =
+    /\b(\d{4}-\d{2}-\d{2}|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/gi;
 
-  for (const pattern of datePatterns) {
-    let m;
-    while ((m = pattern.exec(text)) !== null) {
-      const parsed = parseDate(m[1]);
-      if (parsed && !seen.has(parsed)) {
-        seen.add(parsed);
-        results.push(parsed);
-      }
+  let m;
+  while ((m = unified.exec(text)) !== null) {
+    const parsed = parseDate(m[1]);
+    if (parsed && !seen.has(parsed)) {
+      seen.add(parsed);
+      results.push(parsed);
     }
   }
 
   return results;
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Directional cabin overrides ("business out, economy back")
-// ────────────────────────────────────────────────────────────────────────────
-
-function applyDirectionalCabinOverrides(
-  text: string,
-  segments: ParsedSegment[],
-  globalCabin: CabinClass | null
-): void {
-  if (segments.length < 1) return;
-
-  const lower = text.toLowerCase();
-
-  // Patterns like "business class out, economy back"
-  // or "economy on the way out, business on the return"
-  const outCabin = extractDirectionalCabin(lower, "outbound");
-  const retCabin = extractDirectionalCabin(lower, "return");
-
-  if (outCabin && segments[0]) {
-    segments[0].cabin = outCabin;
-  }
-  if (retCabin && segments.length > 1 && segments[1]) {
-    segments[1].cabin = retCabin;
-  }
-
-  // If only a global cabin was found and no directional overrides, apply it as default
-  if (globalCabin && !outCabin && !retCabin) {
-    for (const seg of segments) {
-      if (!seg.cabin) seg.cabin = globalCabin;
-    }
-  }
-}
-
-function extractDirectionalCabin(lower: string, direction: "outbound" | "return"): CabinClass | null {
-  const cabinWords = "(first\\s*class|business\\s*class|premium\\s*economy|economy|business|first)";
-
-  let patterns: RegExp[];
-  if (direction === "outbound") {
-    patterns = [
-      new RegExp(`${cabinWords}\\s+(?:out(?:bound)?|on\\s+the\\s+way\\s+(?:there|out)|going|departing)`, "i"),
-      new RegExp(`${cabinWords}\\s+(?:class\\s+)?(?:out(?:bound)?|on\\s+the\\s+way\\s+(?:there|out))`, "i"),
-      new RegExp(`(?:out(?:bound)?|on\\s+the\\s+way\\s+(?:there|out)|going)\\s*[,:]?\\s*${cabinWords}`, "i"),
-    ];
-  } else {
-    patterns = [
-      new RegExp(`${cabinWords}\\s+(?:back|return(?:ing)?|home(?:bound)?|coming\\s+(?:back|home)|on\\s+the\\s+(?:way\\s+)?(?:back|return))`, "i"),
-      new RegExp(`(?:back|return(?:ing)?|home(?:bound)?|coming\\s+(?:back|home)|on\\s+the\\s+(?:way\\s+)?(?:back|return))\\s*[,:]?\\s*${cabinWords}`, "i"),
-    ];
-  }
-
-  for (const pattern of patterns) {
-    const m = lower.match(pattern);
-    if (m) {
-      // Find the cabin capture group
-      for (let i = 1; i <= m.length; i++) {
-        if (m[i]) return parseCabinWord(m[i]);
-      }
-    }
-  }
-  return null;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -381,22 +374,20 @@ function extractDirectionalTime(text: string, direction: "outbound" | "return"):
 // ────────────────────────────────────────────────────────────────────────────
 
 function extractGlobalCabin(text: string): CabinClass | null {
-  // Find the LAST cabin mention that isn't directional, as overall default
+  // Use negative lookahead to avoid matching "first thing (in the morning)"
   const cabinMatch = text.match(
-    /\b(first\s*class|business\s*class|premium\s*economy|economy|business|first)\b/gi
+    /\b(first\s*class|business\s*class|premium\s*economy|economy|business|first(?!\s+thing))\b/gi
   );
   if (!cabinMatch) return null;
 
-  // Use the first non-directional one as global default
+  // Use the first non-directional mention as global default
   const lower = text.toLowerCase();
   for (const match of cabinMatch) {
     const idx = lower.indexOf(match.toLowerCase());
     const surrounding = lower.substring(Math.max(0, idx - 30), Math.min(lower.length, idx + match.length + 30));
-    // Skip if it's clearly directional
     if (/\b(out|back|return|there|home|going|coming)\b/.test(surrounding)) continue;
     return parseCabinWord(match);
   }
-  // If all mentions are directional, use first one as fallback
   return parseCabinWord(cabinMatch[0]);
 }
 
@@ -405,28 +396,22 @@ function extractPassengers(text: string): { adults: number; children: number; in
   let children = 0;
   let infants = 0;
 
-  // Explicit count: "2 adults", "3 adults"
   const adultMatch = text.match(/(\d+)\s*adults?/i);
   if (adultMatch) adults = parseInt(adultMatch[1]);
 
-  // "two adults", "three adults"
   const wordAdults = text.match(/\b(two|three|four|five|six|seven|eight|nine|ten)\s+adults?\b/i);
   if (wordAdults) adults = wordToNumber(wordAdults[1]);
 
-  // "for two" / "for 2" (without "adults" — assume adults)
   if (!adultMatch && !wordAdults) {
     const forN = text.match(/\b(?:for|flights?\s+for)\s+(\d+|two|three|four|five)\b/i);
-    if (forN) adults = typeof forN[1] === "string" && /\D/.test(forN[1]) ? wordToNumber(forN[1]) : parseInt(forN[1]);
+    if (forN) adults = /\D/.test(forN[1]) ? wordToNumber(forN[1]) : parseInt(forN[1]);
   }
 
-  // "flying solo" = 1 adult
   if (/\bflying\s+solo\b/i.test(text)) adults = 1;
 
-  // Children
   const childMatch = text.match(/(\d+)\s*(?:children|child|kids?)/i);
   if (childMatch) children = parseInt(childMatch[1]);
 
-  // Infants
   const infantMatch = text.match(/(\d+)\s*infants?/i);
   if (infantMatch) infants = parseInt(infantMatch[1]);
 
@@ -436,35 +421,49 @@ function extractPassengers(text: string): { adults: number; children: number; in
 function extractMaxStops(text: string): number | null {
   const lower = text.toLowerCase();
 
-  if (/\b(?:non[- ]?stop|nonstop|direct)\b/i.test(lower)) return 0;
-  const stopsMatch = lower.match(/\b(?:(?:up\s+to\s+)?(\d+|one|two|three)\s+stop|(\d+|one|two|three)[- ]stop)/i);
-  if (stopsMatch) {
-    const val = stopsMatch[1] || stopsMatch[2];
+  // "prefer direct but will do one stop" → use the flexible constraint
+  const preferBut = lower.match(
+    /prefer\s+(?:direct|nonstop|non[- ]?stop).*?(?:will|would|can)\s+(?:do|accept|take)\s+(\d+|one|two|three)\s+stops?/i
+  );
+  if (preferBut) {
+    const val = preferBut[1];
     return /\d/.test(val) ? parseInt(val) : wordToNumber(val);
   }
-  // "one stop is fine" / "will do one stop"
-  if (/\bone\s+stop\b/i.test(lower)) return 1;
-  if (/\btwo\s+stops?\b/i.test(lower)) return 2;
+
+  // Hard "nonstop" / "non-stop"
+  if (/\b(?:non[- ]?stop|nonstop)\b/i.test(lower)) return 0;
+
+  // "direct" only when not preceded by "prefer" (soft preference)
+  if (/\bdirect\b/.test(lower) && !/prefer\s+direct/.test(lower)) return 0;
+
+  // "prefer direct" alone (no "but" clause) — treat as 0
+  if (/prefer\s+direct\b/.test(lower)) return 0;
+
+  // Explicit stop count: "one stop", "two stops", "1 stop"
+  const stopsMatch = lower.match(/(?:up\s+to\s+)?(\d+|one|two|three)\s+stops?\b/i);
+  if (stopsMatch) {
+    const val = stopsMatch[1];
+    return /\d/.test(val) ? parseInt(val) : wordToNumber(val);
+  }
+
   return null;
 }
 
 function extractPriority(text: string): SearchPriority | null {
   const lower = text.toLowerCase();
-  if (/\b(?:cheap(?:est)?|lowest\s*(?:price|fare|cost)|budget|want\s+the\s+cheapest)\b/i.test(lower)) return "Price";
-  if (/\b(?:quick(?:est)?|fast(?:est)?|shortest|least\s+time)\b/i.test(lower)) return "Duration";
-  if (/\b(?:comfort(?:able)?|flat\s*bed|lie[- ]?flat|luxury)\b/i.test(lower)) return "Comfort";
+  if (/\b(?:cheap(?:est)?|lowest\s*(?:price|fare|cost)|budget|want\s+the\s+cheapest)\b/.test(lower)) return "Price";
+  if (/\b(?:quick(?:est)?|fast(?:est)?|shortest|least\s+time)\b/.test(lower)) return "Duration";
+  if (/\b(?:comfort(?:able)?|flat\s*bed|lie[- ]?flat|luxury)\b/.test(lower)) return "Comfort";
   return null;
 }
 
 function extractNotes(text: string, notes: string[]): void {
   // Conditional upgrade preferences
-  if (/\b(?:i'?d\s+upgrade|would\s+upgrade|open\s+to\s+upgrading?|willing\s+to\s+upgrade)\b/i.test(text)) {
-    const upgradeMatch = text.match(
-      /(?:i'?d\s+upgrade|would\s+upgrade|open\s+to\s+upgrading?|willing\s+to\s+upgrade)\s+(?:to\s+)?(.+?)(?:\s+if\b|$)/i
-    );
-    if (upgradeMatch) {
-      notes.push(`Conditional upgrade interest: ${upgradeMatch[0].trim()}`);
-    }
+  const upgradeMatch = text.match(
+    /(?:i'?d\s+upgrade|would\s+upgrade|open\s+to\s+upgrading?|willing\s+to\s+upgrade)\s+(?:to\s+)?(.+?)(?:\s+if\b|$)/i
+  );
+  if (upgradeMatch) {
+    notes.push(`Conditional upgrade interest: ${upgradeMatch[0].trim()}`);
   }
 
   // Arrival time constraint
@@ -476,10 +475,42 @@ function extractNotes(text: string, notes: string[]): void {
   }
 
   // Stop flexibility
-  if (/\bwilling\s+to\s+do\s+(?:one|two|\d+)\s+stops?\b/i.test(text)) {
-    const m = text.match(/willing\s+to\s+do\s+(one|two|\d+)\s+stops?\s*(.*?)(?:\.|$)/i);
-    if (m) notes.push(`Stop flexibility: ${m[0].trim()}`);
+  const flexMatch = text.match(/willing\s+to\s+do\s+(one|two|\d+)\s+stops?\s*(.*?)(?:\.|$)/i);
+  if (flexMatch) {
+    notes.push(`Stop flexibility: ${flexMatch[0].trim()}`);
   }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Time extraction — first-mentioned preference wins
+// ────────────────────────────────────────────────────────────────────────────
+
+function extractClauseTime(clause: string): DepartureTimeWindow | undefined {
+  const lower = clause.toLowerCase();
+
+  // Find the earliest-occurring time reference in the text
+  const timePatterns: [RegExp, DepartureTimeWindow][] = [
+    [/\b(?:red[- ]?eye|overnight|late[- ]?night)\b/, "RedEye"],
+    [/\bevening\b/, "Evening"],
+    [/\bearly\s+afternoon\b/, "Afternoon"],
+    [/\bmorning\b/, "Morning"],
+    [/\bfirst\s+thing\b/, "Morning"],
+    [/\bearliest(?:\s+possible)?\b/, "Morning"],
+    [/\bafternoon\b/, "Afternoon"],
+    [/\bearly\b/, "Morning"],
+  ];
+
+  let earliest: { index: number; window: DepartureTimeWindow } | null = null;
+  for (const [pattern, window] of timePatterns) {
+    const m = lower.match(pattern);
+    if (m && m.index !== undefined) {
+      if (!earliest || m.index < earliest.index) {
+        earliest = { index: m.index, window };
+      }
+    }
+  }
+
+  return earliest?.window;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -498,61 +529,9 @@ function parseTimeWord(raw: string): DepartureTimeWindow {
   const lower = raw.toLowerCase().trim();
   if (/red[- ]?eye|overnight|late[- ]?night/.test(lower)) return "RedEye";
   if (/evening/.test(lower)) return "Evening";
-  if (/afternoon|early\s+afternoon/.test(lower)) return "Afternoon";
+  if (/afternoon/.test(lower)) return "Afternoon";
   if (/morning|early|earliest|first\s+thing/.test(lower)) return "Morning";
   return "Any";
-}
-
-function extractClauseTime(clause: string): DepartureTimeWindow | undefined {
-  const lower = clause.toLowerCase();
-  if (/\b(?:red[- ]?eye|overnight|late[- ]?night)\b/.test(lower)) return "RedEye";
-  if (/\bevening\b/.test(lower)) return "Evening";
-  if (/\b(?:early\s+afternoon|afternoon)\b/.test(lower)) return "Afternoon";
-  if (/\b(?:morning|first\s+thing|earliest(?:\s+possible)?|early)\b/.test(lower)) return "Morning";
-  return undefined;
-}
-
-function cleanCityName(raw: string): string {
-  return raw
-    .replace(/\b(?:on|by|departing|from|the|flying|out\s+of|into|leaving|arriving|in)\b/gi, "")
-    .replace(/\b(?:first\s*class|business\s*class|premium\s*economy|economy|business|first)\b/gi, "")
-    .replace(/\b(?:morning|afternoon|evening|red[- ]?eye|overnight|late[- ]?night)\b/gi, "")
-    .replace(/\b(?:nonstop|non[- ]?stop|direct|one[- ]?way|round[- ]?trip)\b/gi, "")
-    .replace(/[,;—–\-]+$/g, "")
-    .replace(/^[,;—–\-]+/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function stripCarrierNames(text: string): string {
-  // Remove carrier references from text to prevent them interfering with route parsing
-  let result = text;
-  // Remove "on/with/via CARRIER" phrases
-  result = result.replace(
-    /\b(?:on|with|via|prefer(?:ably)?|preferr?ed?)\s+(?:carrier\s+)?(?:[\w\s]+?(?:airlines?|air(?:ways|lines)?|pacific))\b/gi,
-    " "
-  );
-  // Remove "CARRIER or CARRIER" patterns
-  result = result.replace(
-    /\b(?:[\w]+(?:\s+airlines?|\s+air(?:ways)?|\s+pacific)?)\s+or\s+(?:[\w]+(?:\s+airlines?|\s+air(?:ways)?|\s+pacific)?)\b/gi,
-    " "
-  );
-  return result.replace(/\s+/g, " ");
-}
-
-function stripCabinPhrases(text: string): string {
-  return text
-    .replace(/\b(?:first\s*class|business\s*class|premium\s*economy|economy\s*class|economy|business|first)\b/gi, " ")
-    .replace(/\s+/g, " ");
-}
-
-function stripNoisePhrases(text: string): string {
-  return text
-    .replace(/\b(?:can\s+you\s+(?:find|check|get|book|look)|i\s+(?:need|want)\s+(?:to|a)|looking\s+for|what\s+are\s+my\s+options|get\s+me)\b/gi, " ")
-    .replace(/\b(?:nonstop|non[- ]?stop|direct|one[- ]?way|round[- ]?trip|cheap(?:est)?|options?)\b/gi, " ")
-    .replace(/\b(?:just|really|please|preferably|prefer|preferred|I'd\s+love|at\s+least)\b/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function wordToNumber(word: string): number {
