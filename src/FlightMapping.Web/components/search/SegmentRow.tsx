@@ -7,6 +7,7 @@ interface Props {
   index: number;
   canRemove: boolean;
   globalCabin: CabinClass;
+  autoFocusDestination?: boolean;
   onChange: (index: number, updates: Partial<SegmentInput>) => void;
   onRemove: (index: number) => void;
 }
@@ -16,6 +17,7 @@ export default function SegmentRow({
   index,
   canRemove,
   globalCabin,
+  autoFocusDestination,
   onChange,
   onRemove,
 }: Props) {
@@ -43,6 +45,7 @@ export default function SegmentRow({
             onChange(index, { destination: e.target.value.toUpperCase() })
           }
           maxLength={3}
+          autoFocus={autoFocusDestination}
           className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
         />
         <input

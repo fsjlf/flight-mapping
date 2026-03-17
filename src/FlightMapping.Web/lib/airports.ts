@@ -125,9 +125,14 @@ export function resolveAirport(input: string): string | null {
   if (AIRPORTS[normalized]) return AIRPORTS[normalized];
   // If it's already a 3-letter IATA code (uppercase check)
   if (/^[A-Z]{3}$/.test(input.trim())) return input.trim();
-  // Try matching by starting substring
-  for (const [key, code] of Object.entries(AIRPORTS)) {
-    if (key.startsWith(normalized) || normalized.startsWith(key)) return code;
+  // Try matching by starting substring — require minimum 3 chars to prevent
+  // false positives like "me"→MEX, "I"→IAH, "to"→YYZ, "or"→ORD
+  if (normalized.length >= 3) {
+    for (const [key, code] of Object.entries(AIRPORTS)) {
+      if (key.startsWith(normalized)) return code;
+      // "input starts with key" — only match at word boundaries
+      if (normalized.startsWith(key) && (normalized.length === key.length || normalized[key.length] === " ")) return code;
+    }
   }
   return null;
 }

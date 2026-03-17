@@ -14,3 +14,18 @@ export async function searchFlights(request: SearchRequest): Promise<SearchRespo
 
   return res.json();
 }
+
+export async function parseWithAI(text: string): Promise<Partial<SearchRequest>> {
+  const res = await fetch("/api/parse", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error || `Parse failed (${res.status})`);
+  }
+
+  return res.json();
+}

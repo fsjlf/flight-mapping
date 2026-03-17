@@ -8,9 +8,11 @@ import ItineraryDetail from "./ItineraryDetail";
 interface Props {
   itinerary: EnrichedItinerary;
   variants?: EnrichedItinerary[];
+  /** Min achievable stops per segment position across all itineraries. */
+  minStopsPerSeg?: number[];
 }
 
-export default function ItineraryCard({ itinerary, variants }: Props) {
+export default function ItineraryCard({ itinerary, variants, minStopsPerSeg }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [showVariants, setShowVariants] = useState(false);
   const { segments, pricing, scores, strategyType } = itinerary;
@@ -24,6 +26,11 @@ export default function ItineraryCard({ itinerary, variants }: Props) {
   const totalStops = segments.reduce((sum, s) => sum + s.stops, 0);
   const stopsLabel =
     totalStops === 0 ? "Nonstop" : `${totalStops} stop${totalStops > 1 ? "s" : ""}`;
+
+  // Check if any segment has no nonstop option available
+  const hasNoNonstopSegs = minStopsPerSeg
+    ? segments.some((seg, i) => seg.stops > 0 && minStopsPerSeg[i] > 0)
+    : false;
 
   return (
     <div
@@ -59,6 +66,14 @@ export default function ItineraryCard({ itinerary, variants }: Props) {
               <span>{itinerary.totalDurationFormatted}</span>
               <span className="text-gray-300">·</span>
               <span>{stopsLabel}</span>
+              {hasNoNonstopSegs && (
+                <span className="text-[9px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+                  No nonstop avail on {segments
+                    .map((seg, i) => (minStopsPerSeg && minStopsPerSeg[i] > 0 ? `${seg.origin}→${seg.destination}` : null))
+                    .filter(Boolean)
+                    .join(", ")}
+                </span>
+              )}
               <span className="text-gray-300">·</span>
               <span>{itinerary.validatingCarrier}</span>
             </div>

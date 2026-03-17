@@ -7,4 +7,5 @@ public interface ISabreClient
 {
     Task<bool> TestConnectionAsync(CancellationToken cancellationToken = default);
     Task<BfmGroupedResponse?> SearchFlightsAsync(BfmRequest request, CancellationToken cancellationToken = default);
+    Task<(HotelDetailsResponse? Response, string? ErrorBody)> GetHotelDetailsAsync(HotelDetailsRequest request, CancellationToken cancellationToken = default);
 }

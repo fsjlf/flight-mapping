@@ -4,9 +4,11 @@ import ItineraryCard from "./ItineraryCard";
 
 interface Props {
   itineraries: EnrichedItinerary[];
+  /** Min achievable stops per segment position across all itineraries. */
+  minStopsPerSeg?: number[];
 }
 
-export default function RoundTripList({ itineraries }: Props) {
+export default function RoundTripList({ itineraries, minStopsPerSeg }: Props) {
   if (itineraries.length === 0) {
     return (
       <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center">
@@ -27,6 +29,7 @@ export default function RoundTripList({ itineraries }: Props) {
           key={group.flightKey}
           itinerary={group.primary}
           variants={group.variants}
+          minStopsPerSeg={minStopsPerSeg}
         />
       ))}
     </div>
