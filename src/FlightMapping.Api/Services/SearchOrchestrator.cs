@@ -334,28 +334,34 @@ public class SearchOrchestrator : ISearchOrchestrator
 
         var probePlan = _strategyGenerator.GeneratePlan(probeRequest, classification);
 
-        // Only run the first strategy (cheapest route) to keep it fast
-        var firstStrategy = probePlan.Strategies.FirstOrDefault();
-        if (firstStrategy == null) return new List<EnrichedItinerary>();
+        _logger.LogInformation("Split PNR probe: firing {PaxCount}-pax search ({CallCount} calls)",
+            adultCount, probePlan.TotalApiCalls);
 
-        var firstCall = firstStrategy.ApiCalls.FirstOrDefault();
-        if (firstCall == null) return new List<EnrichedItinerary>();
-
-        _logger.LogInformation("Split PNR probe: firing {PaxCount}-pax search for comparison", adultCount);
+        // Run ALL strategy API calls in parallel to cover the same flight combos as the main search
+        var allCalls = probePlan.Strategies
+            .SelectMany(s => s.ApiCalls.Select(c => (Strategy: s, Call: c)))
+            .ToList();
 
         try
         {
-            var (itineraries, _, _) = await ExecuteApiCall(firstStrategy, firstCall, probeRequest, cancellationToken);
+            var tasks = allCalls.Select(x => ExecuteApiCall(x.Strategy, x.Call, probeRequest, cancellationToken));
+            var results = await Task.WhenAll(tasks);
+
+            var allItins = new List<EnrichedItinerary>();
+            foreach (var (itineraries, _, _) in results)
+            {
+                allItins.AddRange(itineraries);
+            }
 
             // Drop broken pricing
-            itineraries.RemoveAll(i => i.Pricing.TotalPrice <= 0);
+            allItins.RemoveAll(i => i.Pricing.TotalPrice <= 0);
 
-            _logger.LogInformation("Split PNR probe: got {Count} itineraries for {PaxCount}-pax", itineraries.Count, adultCount);
-            return itineraries;
+            _logger.LogInformation("Split PNR probe: got {Count} itineraries for {PaxCount}-pax", allItins.Count, adultCount);
+            return allItins;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Split PNR 1-pax probe failed");
+            _logger.LogWarning(ex, "Split PNR {PaxCount}-pax probe failed", adultCount);
             return new List<EnrichedItinerary>();
         }
     }
