@@ -25,6 +25,32 @@ import {
   StrategyModel,
 } from "@/lib/strategyTransform";
 
+// ── Colour tokens (light mode) ────────────────────────────────────────────────
+
+const C = {
+  bg:           '#f8f9fa',
+  surface:      '#ffffff',
+  surfaceHover: '#f8f9fa',
+  border:       '#e0e0e0',
+  borderSubtle: '#f1f3f4',
+  borderInput:  '#dadce0',
+  text:         '#202124',
+  textSec:      '#5f6368',
+  textMuted:    '#9aa0a6',
+  accent:       '#1a73e8',
+  accentLight:  '#e8f0fe',
+  accentBorder: '#c5d9f8',
+  green:        '#137333',
+  greenBg:      '#e6f4ea',
+  red:          '#c5221f',
+  redBg:        '#fce8e6',
+  amber:        '#e37400',
+  amberBg:      '#fef3e2',
+  s1:           '#1a73e8',
+  s2:           '#1e8e3e',
+  s3:           '#e37400',
+};
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const CARRIER_COLORS: Record<string, string> = {
@@ -150,10 +176,10 @@ function FareRow({
     && new Set(segmentBrands.map((b) => b.brand)).size > 1;
 
   const CABIN_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-    Business: { bg: "rgba(139,115,85,0.15)", text: "#d4a96a", border: "rgba(139,115,85,0.3)" },
-    First: { bg: "rgba(168,130,72,0.15)", text: "#d4a96a", border: "rgba(168,130,72,0.3)" },
-    PremiumEconomy: { bg: "rgba(99,140,180,0.12)", text: "#7cb3d4", border: "rgba(99,140,180,0.25)" },
-    Economy: { bg: "rgba(100,116,139,0.1)", text: "#94a3b8", border: "rgba(100,116,139,0.2)" },
+    Business: { bg: "#fdf6ee", text: "#8b6914", border: "#e8d5a8" },
+    First: { bg: "#fdf6ee", text: "#8b6914", border: "#e8d5a8" },
+    PremiumEconomy: { bg: "#eef5fa", text: "#3b7ca8", border: "#b8d4e8" },
+    Economy: { bg: "#f1f3f5", text: "#5f6368", border: "#d0d5db" },
   };
 
   return (
@@ -162,8 +188,8 @@ function FareRow({
       className="flex flex-col cursor-pointer rounded-[5px] my-[2px] transition-all duration-100"
       style={{
         padding: "5px 10px 5px 8px",
-        background: checked ? `${color}18` : "transparent",
-        border: `1px solid ${checked ? `${color}45` : "transparent"}`,
+        background: checked ? C.accentLight : "transparent",
+        border: `1px solid ${checked ? C.accent : "transparent"}`,
       }}
     >
       {/* Main row: checkbox + label + flex badge + price */}
@@ -174,12 +200,12 @@ function FareRow({
             width: 13,
             height: 13,
             borderRadius: 3,
-            border: `1.5px solid ${checked ? color : "rgba(255,255,255,0.18)"}`,
+            border: `1.5px solid ${checked ? color : "#dadce0"}`,
             background: checked ? color : "transparent",
           }}
         >
           {checked && (
-            <span style={{ color: "#080b14", fontSize: 8, fontWeight: 900, lineHeight: 1 }}>
+            <span style={{ color: C.text, fontSize: 8, fontWeight: 900, lineHeight: 1 }}>
               ✓
             </span>
           )}
@@ -187,7 +213,7 @@ function FareRow({
         {!isMixedBrand ? (
           <span
             className="text-[10px] flex-1"
-            style={{ fontWeight: checked ? 700 : 400, color: checked ? "#f1f5f9" : "#6b7280" }}
+            style={{ fontWeight: checked ? 700 : 400, color: checked ? C.text : C.textSec }}
           >
             {label}
           </span>
@@ -195,7 +221,7 @@ function FareRow({
           <span className="flex-1" />
         )}
         {refundable && (
-          <span className="text-[7px] font-bold tracking-wider text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-[5px] py-[1px] rounded-[3px]">
+          <span className="text-[7px] font-bold tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 px-[5px] py-[1px] rounded-[3px]">
             FLEX
           </span>
         )}
@@ -204,7 +230,7 @@ function FareRow({
           style={{
             fontWeight: 800,
             letterSpacing: -0.3,
-            color: checked ? color : "#94a3b8",
+            color: checked ? color : C.textSec,
           }}
         >
           {pfmt(perAdult)}
@@ -226,12 +252,12 @@ function FareRow({
                 </span>
                 <span
                   className="text-[8px] font-semibold"
-                  style={{ color: checked ? "#e2e8f0" : "#9ca3af" }}
+                  style={{ color: checked ? C.text : C.textMuted }}
                 >
                   {sb.brand}
                 </span>
                 {i < segmentBrands.length - 1 && (
-                  <span className="text-[8px] text-slate-700 mx-[1px]">+</span>
+                  <span className="text-[8px] text-gray-300 mx-[1px]">+</span>
                 )}
               </span>
             );
@@ -242,22 +268,22 @@ function FareRow({
       {fareTerms && (fareTerms.changeSummary !== "No Changes" || fareTerms.baggage || fareTerms.seatsAvailable > 0) && (
         <div className="flex items-center gap-[6px] pl-[21px] mt-[2px] flex-wrap">
           {fareTerms.refundPolicy !== "none" && fareTerms.refundPolicy !== "full" && (
-            <span className="text-[7px] text-amber-400/80">{fareTerms.refundSummary}</span>
+            <span className="text-[7px] text-amber-600/80">{fareTerms.refundSummary}</span>
           )}
           {fareTerms.changePolicy === "free" && (
             <span className="text-[7px] text-sky-400/70">Free Changes</span>
           )}
           {fareTerms.changePolicy === "fee" && (
-            <span className="text-[7px] text-slate-500">Changes for Fee</span>
+            <span className="text-[7px] text-gray-9000">Changes for Fee</span>
           )}
           {fareTerms.baggage && (
-            <span className="text-[7px] text-slate-500">{fareTerms.baggage}</span>
+            <span className="text-[7px] text-gray-9000">{fareTerms.baggage}</span>
           )}
           {fareTerms.seatType && (
             <span className="text-[7px] text-purple-400/70">{fareTerms.seatType}</span>
           )}
           {fareTerms.seatsAvailable > 0 && fareTerms.seatsAvailable <= 4 && (
-            <span className="text-[7px] text-red-400/70">{fareTerms.seatsAvailable} left</span>
+            <span className="text-[7px] text-red-600/70">{fareTerms.seatsAvailable} left</span>
           )}
         </div>
       )}
@@ -305,10 +331,10 @@ function CarrierFareTabs({
   const activeItems = carrierGroups.groups.get(activeCarrier) || [];
 
   return (
-    <div className="px-2 pb-2" style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+    <div className="px-2 pb-2" style={{ borderTop: "1px solid #e0e0e0" }}>
       {showTabs ? (
         <div className="flex items-center gap-[3px] px-[6px] pt-[5px] pb-[4px] flex-wrap">
-          <span className="text-[7px] text-slate-600 tracking-[1.5px] uppercase font-semibold mr-1">
+          <span className="text-[7px] text-gray-400 tracking-[1.5px] uppercase font-semibold mr-1">
             Fares via
           </span>
           {carrierGroups.order.map((vc) => {
@@ -326,14 +352,14 @@ function CarrierFareTabs({
                   padding: "2px 6px",
                   fontSize: 9,
                   fontWeight: isActive ? 700 : 500,
-                  color: isActive ? "#f1f5f9" : "#6b7280",
-                  background: isActive ? "rgba(255,255,255,0.08)" : "transparent",
-                  border: `1px solid ${hasSelected ? `${color}40` : isActive ? "rgba(255,255,255,0.1)" : "transparent"}`,
+                  color: isActive ? C.text : C.textSec,
+                  background: isActive ? "#f1f3f4" : "transparent",
+                  border: `1px solid ${hasSelected ? C.accent : isActive ? "#dadce0" : "transparent"}`,
                 }}
               >
                 <CarrierChip code={vc} size={12} />
                 <span>{vc}</span>
-                <span style={{ color: "#4b5563", fontSize: 8 }}>({count})</span>
+                <span style={{ color: C.textMuted, fontSize: 8 }}>({count})</span>
                 {hasSelected && (
                   <span style={{ color, fontSize: 7, fontWeight: 800 }}>●</span>
                 )}
@@ -342,7 +368,7 @@ function CarrierFareTabs({
           })}
         </div>
       ) : (
-        <div className="text-[7px] text-slate-600 tracking-[1.5px] uppercase px-[10px] pt-[5px] pb-[3px] font-semibold">
+        <div className="text-[7px] text-gray-400 tracking-[1.5px] uppercase px-[10px] pt-[5px] pb-[3px] font-semibold">
           Fare class{option.variants.length > 1 ? "es" : ""}
         </div>
       )}
@@ -540,8 +566,8 @@ function OptionCard({
     <div
       className="rounded-lg mb-[6px] overflow-hidden transition-all duration-150"
       style={{
-        border: `1px solid ${anyChecked ? `${color}55` : "rgba(255,255,255,0.06)"}`,
-        background: anyChecked ? `${color}08` : "rgba(255,255,255,0.015)",
+        border: `1px solid ${anyChecked ? C.accent : "#f1f3f4"}`,
+        background: anyChecked ? C.accentLight : "#ffffff",
       }}
     >
       {/* ── Summary Row (always visible, scannable) ── */}
@@ -557,12 +583,12 @@ function OptionCard({
             width: 15,
             height: 15,
             borderRadius: 4,
-            border: `1.5px solid ${anyChecked ? color : "rgba(255,255,255,0.15)"}`,
+            border: `1.5px solid ${anyChecked ? color : "#dadce0"}`,
             background: allChecked ? color : "transparent",
           }}
         >
           {allChecked && (
-            <span style={{ color: "#080b14", fontSize: 8, fontWeight: 900 }}>✓</span>
+            <span style={{ color: C.text, fontSize: 8, fontWeight: 900 }}>✓</span>
           )}
           {anyChecked && !allChecked && (
             <div style={{ width: 6, height: 1.5, background: color, borderRadius: 1 }} />
@@ -575,15 +601,15 @@ function OptionCard({
         {/* Schedule: dep → arr (PRIMARY) */}
         <div className="flex flex-col min-w-0">
           <div className="flex items-baseline gap-[5px]">
-            <span className="text-[13px] font-extrabold text-slate-100 tracking-tight leading-none">
+            <span className="text-[13px] font-extrabold text-gray-900 tracking-tight leading-none">
               {tfmt(overallDep)}
             </span>
-            <span className="text-[10px] text-slate-600">–</span>
-            <span className="text-[13px] font-extrabold text-slate-100 tracking-tight leading-none">
+            <span className="text-[10px] text-gray-400">–</span>
+            <span className="text-[13px] font-extrabold text-gray-900 tracking-tight leading-none">
               {tfmt(overallArr)}
             </span>
             {plusDays > 0 && (
-              <sup className="text-[8px] font-bold text-orange-400 leading-none" style={{ position: "relative", top: -4 }}>
+              <sup className="text-[8px] font-bold text-orange-600 leading-none" style={{ position: "relative", top: -4 }}>
                 +{plusDays}
               </sup>
             )}
@@ -595,21 +621,21 @@ function OptionCard({
                 ? `${firstSeg2?.origin}–${lastSeg2?.destination}`
                 : `${firstSeg2?.origin}–${firstSeg2?.destination}`;
               return (
-                <span className="text-[8px] font-bold text-cyan-400/80 bg-cyan-400/10 border border-cyan-400/15 px-[4px] py-[0.5px] rounded-[3px] ml-[2px]">
+                <span className="text-[8px] font-bold text-blue-600/80 bg-blue-50 border border-blue-200 px-[4px] py-[0.5px] rounded-[3px] ml-[2px]">
                   {routeStr}
                 </span>
               );
             })()}
           </div>
           <div className="flex items-center gap-[5px] mt-[2px]">
-            <span className="text-[9px] text-slate-500 font-medium">
+            <span className="text-[9px] text-gray-9000 font-medium">
               {option.carrierName}
             </span>
             {option.segments.map((seg, i) => (
-              <span key={i} className="text-[8px] font-mono text-slate-600">{seg.flightNumber}</span>
+              <span key={i} className="text-[8px] font-mono text-gray-400">{seg.flightNumber}</span>
             ))}
             {isAISuggested && (
-              <span className="text-[7px] font-bold tracking-wider text-indigo-400 bg-indigo-400/10 border border-indigo-400/25 px-[4px] py-[0.5px] rounded-[3px]">
+              <span className="text-[7px] font-bold tracking-wider text-blue-600 bg-blue-50 border border-blue-200 px-[4px] py-[0.5px] rounded-[3px]">
                 ✦ AI
               </span>
             )}
@@ -618,13 +644,13 @@ function OptionCard({
 
         {/* Duration column */}
         <div className="flex flex-col items-center ml-auto shrink-0" style={{ minWidth: 52 }}>
-          <span className="text-[10px] font-semibold text-slate-400">{option.totalDuration}</span>
+          <span className="text-[10px] font-semibold text-gray-500">{option.totalDuration}</span>
           {totalStops === 0 ? (
-            <span className="text-[8px] text-emerald-500 font-semibold">Nonstop</span>
+            <span className="text-[8px] text-emerald-700 font-semibold">Nonstop</span>
           ) : singleSegLayover ? (
-            <span className="text-[8px] text-orange-400/80">{singleSegLayover}</span>
+            <span className="text-[8px] text-orange-600/80">{singleSegLayover}</span>
           ) : (
-            <span className="text-[8px] text-orange-400/80">
+            <span className="text-[8px] text-orange-600/80">
               {totalStops} stop{totalStops > 1 ? "s" : ""}
             </span>
           )}
@@ -632,22 +658,22 @@ function OptionCard({
 
         {/* Price column (right-anchored) */}
         <div className="flex flex-col items-end shrink-0" style={{ minWidth: 70 }}>
-          <span className="text-[12px] font-extrabold text-slate-200 tracking-tight">
+          <span className="text-[12px] font-extrabold text-gray-800 tracking-tight">
             {pfmt(minPrice)}
           </span>
           <div className="flex items-center gap-[3px]">
             {isCheapest && (
-              <span className="text-[7px] font-bold text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-[4px] py-[0.5px] rounded-[3px]">
+              <span className="text-[7px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-[4px] py-[0.5px] rounded-[3px]">
                 CHEAPEST
               </span>
             )}
             {!isCheapest && priceVsCheapest != null && priceVsCheapest > 0 && (
-              <span className="text-[8px] text-slate-600">+{pfmt(priceVsCheapest)}</span>
+              <span className="text-[8px] text-gray-400">+{pfmt(priceVsCheapest)}</span>
             )}
             {anyChecked && (
               <span
                 className="text-[7px] font-bold rounded-[8px] px-[5px] py-[1px]"
-                style={{ color, background: `${color}18`, border: `1px solid ${color}30` }}
+                style={{ color, background: C.accentLight, border: `1px solid C.accentBorder` }}
               >
                 {selectedVariantIndices.size}✓
               </span>
@@ -656,7 +682,7 @@ function OptionCard({
         </div>
 
         {/* Expand chevron */}
-        <span className="text-[10px] text-slate-700 ml-[2px]">
+        <span className="text-[10px] text-gray-300 ml-[2px]">
           {showFares ? "▲" : "▼"}
         </span>
       </div>
@@ -665,7 +691,7 @@ function OptionCard({
       {option.segments.length > 1 && (
         <div
           className="flex flex-col gap-[2px] px-3 pb-[6px]"
-          style={{ borderTop: "1px solid rgba(255,255,255,0.03)" }}
+          style={{ borderTop: "1px solid #e0e0e0" }}
         >
           {option.segments.map((seg, i) => {
             const segPlusDays = dayOffset(seg.departureTime, seg.arrivalTime);
@@ -673,34 +699,34 @@ function OptionCard({
             return (
               <div key={i} className="flex items-center gap-[6px] pl-[23px]">
                 <CarrierChip code={seg.marketingCarrier} size={12} />
-                <span className="font-mono text-[8px] font-bold text-slate-600 w-[38px] shrink-0">
+                <span className="font-mono text-[8px] font-bold text-gray-400 w-[38px] shrink-0">
                   {seg.flightNumber}
                 </span>
-                <span className="text-[10px] font-bold text-slate-300">
+                <span className="text-[10px] font-bold text-gray-700">
                   {tfmt(seg.departureTime)}
                 </span>
-                <span className="text-[8px] text-slate-700">–</span>
-                <span className="text-[10px] font-bold text-slate-300">
+                <span className="text-[8px] text-gray-300">–</span>
+                <span className="text-[10px] font-bold text-gray-700">
                   {tfmt(seg.arrivalTime)}
                 </span>
                 {segPlusDays > 0 && (
-                  <sup className="text-[7px] font-bold text-orange-400" style={{ position: "relative", top: -3 }}>+{segPlusDays}</sup>
+                  <sup className="text-[7px] font-bold text-orange-600" style={{ position: "relative", top: -3 }}>+{segPlusDays}</sup>
                 )}
-                <span className="text-[8px] text-slate-600">
+                <span className="text-[8px] text-gray-400">
                   {seg.origin}–{seg.destination}
                 </span>
                 {seg.cabin && seg.cabin !== "Economy" && (
-                  <span className="text-[7px] font-bold tracking-wider px-[4px] py-[0.5px] rounded-[3px] bg-amber-400/10 text-amber-400 border border-amber-400/20">
+                  <span className="text-[7px] font-bold tracking-wider px-[4px] py-[0.5px] rounded-[3px] bg-amber-50 text-amber-600 border border-amber-200">
                     {seg.cabin === "PremiumEconomy" ? "PREM" : seg.cabin === "Business" ? "BIZ" : seg.cabin === "First" ? "FIRST" : String(seg.cabin).toUpperCase()}
                   </span>
                 )}
-                <span className="text-[8px] text-slate-700 ml-auto">{seg.durationFormatted}</span>
+                <span className="text-[8px] text-gray-300 ml-auto">{seg.durationFormatted}</span>
                 {seg.stops === 0 ? (
-                  <span className="text-[7px] text-emerald-600">Non</span>
+                  <span className="text-[7px] text-emerald-700">Non</span>
                 ) : segLayover ? (
-                  <span className="text-[7px] text-orange-500/80">{segLayover}</span>
+                  <span className="text-[7px] text-orange-600/80">{segLayover}</span>
                 ) : (
-                  <span className="text-[7px] text-orange-500">{seg.stops}✗</span>
+                  <span className="text-[7px] text-orange-600">{seg.stops}✗</span>
                 )}
               </div>
             );
@@ -722,23 +748,23 @@ function OptionCard({
       {showFares && (
         <div
           className="px-3 py-[4px] flex items-center justify-between cursor-pointer"
-          style={{ borderTop: "1px solid rgba(255,255,255,0.03)", background: "rgba(0,0,0,0.15)" }}
+          style={{ borderTop: "1px solid #e0e0e0", background: "#f8f9fa" }}
           onClick={() => setDetailsOpen(!detailsOpen)}
         >
-          <span className="text-[8px] text-slate-600">{detailsOpen ? "Hide details" : "Flight details"}</span>
-          <span className="text-[8px] text-slate-700">{detailsOpen ? "▲" : "▼"}</span>
+          <span className="text-[8px] text-gray-400">{detailsOpen ? "Hide details" : "Flight details"}</span>
+          <span className="text-[8px] text-gray-300">{detailsOpen ? "▲" : "▼"}</span>
         </div>
       )}
       {detailsOpen && showFares && (
         <div
           className="py-[8px] px-[14px]"
-          style={{ background: "rgba(0,0,0,0.22)" }}
+          style={{ background: "#f8f9fa" }}
         >
           {option.segments.map((seg, si) => (
             <div key={si} className={si > 0 ? "mt-[8px]" : ""}>
               {/* Segment header for multi-segment options */}
               {option.segments.length > 1 && (
-                <div className="text-[8px] text-slate-500 tracking-[1px] uppercase font-semibold mb-[6px]">
+                <div className="text-[8px] text-gray-9000 tracking-[1px] uppercase font-semibold mb-[6px]">
                   Segment {si + 1} — {seg.origin} → {seg.destination}
                 </div>
               )}
@@ -759,18 +785,18 @@ function OptionCard({
                         {/* Departure */}
                         <div className="flex items-start gap-[10px]">
                           <div className="flex flex-col items-center" style={{ width: 12 }}>
-                            <div className="w-[7px] h-[7px] rounded-full border-2 mt-[2px]" style={{ borderColor: "rgba(148,163,184,0.5)" }} />
-                            <div className="w-[1.5px] flex-1 min-h-[20px]" style={{ background: "rgba(148,163,184,0.2)" }} />
+                            <div className="w-[7px] h-[7px] rounded-full border-2 mt-[2px]" style={{ borderColor: "#9aa0a6" }} />
+                            <div className="w-[1.5px] flex-1 min-h-[20px]" style={{ background: "#dadce0" }} />
                           </div>
                           <div className="flex-1 pb-[4px]">
                             <div className="flex items-baseline gap-[6px]">
-                              <span className="text-[11px] font-bold text-slate-200">{tfmt(leg.departureTime)}</span>
-                              <span className="text-[9px] text-slate-500">{dfmt(leg.departureTime)}</span>
+                              <span className="text-[11px] font-bold text-gray-800">{tfmt(leg.departureTime)}</span>
+                              <span className="text-[9px] text-gray-9000">{dfmt(leg.departureTime)}</span>
                             </div>
-                            <div className="text-[9px] text-slate-400">
+                            <div className="text-[9px] text-gray-500">
                               {leg.originCity ? `${leg.originCity} (${leg.origin})` : leg.origin}
                             </div>
-                            <div className="text-[8px] text-slate-600 mt-[3px]">
+                            <div className="text-[8px] text-gray-400 mt-[3px]">
                               Travel time: {Math.floor(leg.durationMinutes / 60)}h {leg.durationMinutes % 60}m
                             </div>
                           </div>
@@ -779,28 +805,28 @@ function OptionCard({
                         {/* Arrival */}
                         <div className="flex items-start gap-[10px]">
                           <div className="flex flex-col items-center" style={{ width: 12 }}>
-                            <div className="w-[7px] h-[7px] rounded-full border-2 mt-[2px]" style={{ borderColor: "rgba(148,163,184,0.5)" }} />
+                            <div className="w-[7px] h-[7px] rounded-full border-2 mt-[2px]" style={{ borderColor: "#9aa0a6" }} />
                             {(layoverToNext != null && layoverToNext > 0) && (
-                              <div className="w-[1.5px] flex-1 min-h-[12px]" style={{ background: "rgba(148,163,184,0.1)" }} />
+                              <div className="w-[1.5px] flex-1 min-h-[12px]" style={{ background: "#e0e0e0" }} />
                             )}
                           </div>
                           <div className="flex-1 pb-[2px]">
                             <div className="flex items-baseline gap-[6px]">
-                              <span className="text-[11px] font-bold text-slate-200">
+                              <span className="text-[11px] font-bold text-gray-800">
                                 {tfmt(leg.arrivalTime)}
                               </span>
                               {legPlusDays > 0 && (
-                                <sup className="text-[8px] font-bold text-orange-400">+{legPlusDays}</sup>
+                                <sup className="text-[8px] font-bold text-orange-600">+{legPlusDays}</sup>
                               )}
-                              <span className="text-[9px] text-slate-500">{dfmt(leg.arrivalTime)}</span>
+                              <span className="text-[9px] text-gray-9000">{dfmt(leg.arrivalTime)}</span>
                             </div>
-                            <div className="text-[9px] text-slate-400">
+                            <div className="text-[9px] text-gray-500">
                               {leg.destinationCity ? `${leg.destinationCity} (${leg.destination})` : leg.destination}
                             </div>
                             {/* Carrier + aircraft info */}
                             <div className="flex items-center gap-[6px] mt-[4px] flex-wrap">
                               <CarrierChip code={leg.marketingCarrier} size={14} />
-                              <span className="text-[8px] text-slate-500">
+                              <span className="text-[8px] text-gray-9000">
                                 {CARRIER_FULL_NAMES[leg.marketingCarrier] || leg.marketingCarrier}
                                 {" · "}
                                 {seg.cabin}
@@ -808,16 +834,16 @@ function OptionCard({
                                 {leg.flightNumber}
                               </span>
                               {acName && (
-                                <span className="text-[8px] text-slate-600">· {acName}</span>
+                                <span className="text-[8px] text-gray-400">· {acName}</span>
                               )}
                             </div>
                             {isCodeshare && (
-                              <div className="text-[8px] text-amber-500/70 mt-[1px]">
+                              <div className="text-[8px] text-amber-600/70 mt-[1px]">
                                 Operated by {opName} {leg.operatingCarrier !== leg.marketingCarrier ? leg.operatingCarrier + leg.operatingFlightNumber : ""}
                               </div>
                             )}
                             {leg.mealCode && leg.mealCode !== "N" && (
-                              <span className="text-[8px] text-slate-600 mt-[1px]">Meal service included</span>
+                              <span className="text-[8px] text-gray-400 mt-[1px]">Meal service included</span>
                             )}
                           </div>
                         </div>
@@ -830,18 +856,18 @@ function OptionCard({
                             <div style={{ width: 12 }} />
                             <div
                               className="flex-1 rounded-[5px] px-[10px] py-[5px]"
-                              style={{ background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.12)" }}
+                              style={{ background: "#fef3e2", border: "1px solid #f5deb3" }}
                             >
-                              <span className="text-[9px] text-amber-400/80 font-medium">
+                              <span className="text-[9px] text-amber-600/80 font-medium">
                                 {Math.floor(layoverToNext / 60)}h {layoverToNext % 60}m layover
                                 {" · "}
                                 {leg.destinationCity ? `${leg.destinationCity} (${leg.destination})` : leg.destination}
                               </span>
                               {layoverToNext < 90 && (
-                                <span className="text-[8px] text-red-400/70 ml-[6px]">Tight connection</span>
+                                <span className="text-[8px] text-red-600/70 ml-[6px]">Tight connection</span>
                               )}
                               {layoverToNext > 360 && (
-                                <span className="text-[8px] text-amber-500/50 ml-[6px]">Long layover</span>
+                                <span className="text-[8px] text-amber-600/50 ml-[6px]">Long layover</span>
                               )}
                             </div>
                           </div>
@@ -852,9 +878,9 @@ function OptionCard({
                 </div>
               ) : (
                 /* Fallback when no legs data — show basic segment info */
-                <div className="text-[9px] text-slate-600 flex gap-2 items-center py-[2px]">
+                <div className="text-[9px] text-gray-400 flex gap-2 items-center py-[2px]">
                   <CarrierChip code={seg.marketingCarrier} size={14} />
-                  <span className="font-semibold text-slate-500">{seg.flightNumber}</span>
+                  <span className="font-semibold text-gray-9000">{seg.flightNumber}</span>
                   {seg.equipment && <span>· {aircraftName(seg.equipment)}</span>}
                   {seg.operatingCarrier !== seg.marketingCarrier && (
                     <span>· Operated by {CARRIER_FULL_NAMES[seg.operatingCarrier] || seg.operatingCarrier}</span>
@@ -872,10 +898,10 @@ function OptionCard({
         <div
           className="flex items-center gap-[8px] px-3 py-[6px] cursor-pointer"
           style={{
-            borderTop: "1px solid rgba(255,255,255,0.04)",
+            borderTop: "1px solid #e0e0e0",
             background: splitDetection.savingsBadge === "green"
-              ? "rgba(16,185,129,0.08)"
-              : "rgba(245,158,11,0.06)",
+              ? C.greenBg
+              : C.amberBg,
           }}
           onClick={(e) => {
             e.stopPropagation();
@@ -886,17 +912,17 @@ function OptionCard({
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
           </svg>
           <div className="flex-1 min-w-0">
-            <span className={`text-[9px] font-bold ${splitDetection.savingsBadge === "green" ? "text-emerald-400" : "text-amber-400"}`}>
+            <span className={`text-[9px] font-bold ${splitDetection.savingsBadge === "green" ? "text-emerald-700" : "text-amber-600"}`}>
               SPLIT PNR — Save up to {pfmt(splitDetection.maxEstimatedSavings)}
             </span>
-            <span className="text-[8px] text-slate-500 ml-[6px]">
+            <span className="text-[8px] text-gray-9000 ml-[6px]">
               {splitDetection.singlePaxRbd} {pfmt(splitDetection.singlePaxPrice)}/pax vs {splitDetection.groupRbd} {pfmt(splitDetection.groupPricePerPerson)}/pax
             </span>
           </div>
           <span className={`text-[7px] font-bold tracking-wider px-[5px] py-[2px] rounded-[3px] ${
             splitDetection.savingsBadge === "green"
-              ? "bg-emerald-400/15 text-emerald-400 border border-emerald-400/25"
-              : "bg-amber-400/15 text-amber-400 border border-amber-400/25"
+              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+              : "bg-amber-50 text-amber-600 border border-amber-200"
           }`}>
             VIEW
           </span>
@@ -947,8 +973,8 @@ function AIOptionCard({
     <div
       className="rounded-[7px] mb-[6px] overflow-hidden transition-all duration-150"
       style={{
-        border: `1px solid ${anyChecked ? `${color}55` : "rgba(255,255,255,0.08)"}`,
-        background: anyChecked ? `${color}0d` : "rgba(255,255,255,0.02)",
+        border: `1px solid ${anyChecked ? C.accent : "#f1f3f4"}`,
+        background: anyChecked ? C.accentLight : "#ffffff",
       }}
     >
       {/* Header */}
@@ -956,18 +982,18 @@ function AIOptionCard({
         <CarrierChip code={opt.carrier} size={18} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-[5px]">
-            <span className="text-[11px] font-bold text-slate-100">
+            <span className="text-[11px] font-bold text-gray-900">
               {opt.carrierName || opt.carrier}
             </span>
             {opt.totalDuration && (
-              <span className="text-[9px] text-slate-500">{opt.totalDuration}</span>
+              <span className="text-[9px] text-gray-9000">{opt.totalDuration}</span>
             )}
           </div>
           <div className="flex flex-wrap gap-x-[6px] gap-y-[1px] mt-[2px]">
             {opt.segments.map((seg, i) => (
-              <span key={i} className="text-[9px] text-slate-500 font-mono">
+              <span key={i} className="text-[9px] text-gray-9000 font-mono">
                 {i > 0 && <span className="text-gray-800 mx-[2px]">·</span>}
-                <span className="text-slate-400 font-bold">{seg.flightNumber}</span>{" "}
+                <span className="text-gray-500 font-bold">{seg.flightNumber}</span>{" "}
                 {tfmt(seg.departureTime)}→{tfmt(seg.arrivalTime)} {seg.origin}-{seg.destination}
               </span>
             ))}
@@ -978,8 +1004,8 @@ function AIOptionCard({
             className="text-[8px] font-bold rounded-[10px] px-[6px] py-[1px] shrink-0"
             style={{
               color,
-              background: `${color}20`,
-              border: `1px solid ${color}30`,
+              background: C.accentLight,
+              border: `1px solid C.accentBorder`,
             }}
           >
             {selSet.size} selected
@@ -987,7 +1013,7 @@ function AIOptionCard({
         )}
       </div>
       {/* Fare rows */}
-      <div className="px-2 pb-[6px]" style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+      <div className="px-2 pb-[6px]" style={{ borderTop: "1px solid #e0e0e0" }}>
         {opt.variants.map((v, vi) => {
           const checked = selSet.has(vi);
           return (
@@ -1024,8 +1050,8 @@ function ChatSuggestionBlock({
 
   return (
     <div className="mt-[10px]">
-      <div className="text-[8px] text-slate-500 tracking-[2px] uppercase mb-2 flex items-center gap-[6px]">
-        <span className="text-indigo-400">✦</span>
+      <div className="text-[8px] text-gray-9000 tracking-[2px] uppercase mb-2 flex items-center gap-[6px]">
+        <span className="text-blue-600">✦</span>
         <span>Suggested options — check fares to add to proposal</span>
       </div>
       {slots.map((slot, si) => {
@@ -1041,8 +1067,8 @@ function ChatSuggestionBlock({
                 <span
                   className="px-[6px] py-[1px] rounded-[3px]"
                   style={{
-                    background: `${strat.color}20`,
-                    border: `1px solid ${strat.color}30`,
+                    background: C.accentLight,
+                    border: `1px solid C.accentBorder`,
                   }}
                 >
                   S{strat.num}
@@ -1088,9 +1114,9 @@ function ChatMsg({
       <div
         className="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center text-[9px] font-extrabold mt-[1px]"
         style={{
-          background: u ? "#7c3aed" : "#111827",
+          background: u ? "#7c3aed" : "#f8f9fa",
           color: u ? "#ede9fe" : "#818cf8",
-          border: u ? "none" : "1px solid rgba(129,140,248,0.2)",
+          border: u ? "none" : `1px solid ${C.border}`,
         }}
       >
         {u ? "Y" : "✦"}
@@ -1104,9 +1130,9 @@ function ChatMsg({
               borderRadius: 10,
               borderTopRightRadius: u ? 2 : 10,
               borderTopLeftRadius: u ? 10 : 2,
-              background: u ? "rgba(124,58,237,0.12)" : "rgba(255,255,255,0.03)",
-              border: `1px solid ${u ? "rgba(124,58,237,0.25)" : "rgba(255,255,255,0.05)"}`,
-              color: u ? "#ddd6fe" : "#94a3b8",
+              background: u ? "#f3f0ff" : C.surface,
+              border: `1px solid ${u ? "#d4c5f9" : C.borderSubtle}`,
+              color: u ? C.text : C.textSec,
               marginBottom: m.suggestions ? 6 : 0,
             }}
           >
@@ -1144,8 +1170,8 @@ function SlotTabs({
       className="flex gap-[6px] shrink-0"
       style={{
         padding: "10px 12px",
-        borderBottom: "1px solid rgba(255,255,255,0.05)",
-        background: "rgba(0,0,0,0.15)",
+        borderBottom: "1px solid #e0e0e0",
+        background: "#f8f9fa",
       }}
     >
       {strategy.slots.map((slot) => {
@@ -1162,24 +1188,24 @@ function SlotTabs({
               className="rounded-[7px] transition-all duration-150"
               style={{
                 padding: "8px 10px",
-                border: `1.5px ${isFilled ? "solid" : "dashed"} ${isActive ? strategy.color : isFilled ? `${strategy.color}55` : "rgba(255,255,255,0.09)"}`,
+                border: `1.5px ${isFilled ? "solid" : "dashed"} ${isActive ? strategy.color : isFilled ? C.accent : "#dadce0"}`,
                 background: isActive
-                  ? `${strategy.color}15`
+                  ? C.accentLight
                   : isFilled
-                    ? `${strategy.color}08`
-                    : "rgba(255,255,255,0.01)",
-                boxShadow: isActive ? `0 0 0 1px ${strategy.color}25` : "none",
+                    ? C.accentLight
+                    : "#ffffff",
+                boxShadow: isActive ? `0 0 0 1px C.accentLight` : "none",
               }}
             >
               <div
                 className="text-[7px] font-bold tracking-[2px] mb-[2px] uppercase"
-                style={{ color: isActive ? strategy.color : "#374155" }}
+                style={{ color: isActive ? strategy.color : C.textMuted }}
               >
                 {slot.label}
               </div>
               <div
                 className="text-[10px] font-semibold mb-[3px] leading-tight"
-                style={{ color: isFilled ? "#e2e8f0" : "#374155" }}
+                style={{ color: isFilled ? C.text : C.textMuted }}
               >
                 {slot.coverage}
               </div>
@@ -1188,11 +1214,11 @@ function SlotTabs({
                   <>
                     <span
                       className="text-[8px] font-bold rounded-[10px] px-[6px] py-[1px]"
-                      style={{ color: strategy.color, background: `${strategy.color}20` }}
+                      style={{ color: strategy.color, background: C.accentLight }}
                     >
                       {fares} fare{fares > 1 ? "s" : ""}
                     </span>
-                    <span className="text-[8px] text-slate-500">
+                    <span className="text-[8px] text-gray-9000">
                       {flights} flight{flights > 1 ? "s" : ""}
                     </span>
                   </>
@@ -1200,7 +1226,7 @@ function SlotTabs({
                   <span
                     className="text-[9px]"
                     style={{
-                      color: isActive ? strategy.color : "#374155",
+                      color: isActive ? strategy.color : C.textMuted,
                       fontWeight: isActive ? 600 : 400,
                     }}
                   >
@@ -1256,13 +1282,13 @@ function ComboCalc({
     <div
       className="shrink-0 p-[10px_13px]"
       style={{
-        borderTop: "1px solid rgba(255,255,255,0.05)",
-        background: "rgba(0,0,0,0.25)",
+        borderTop: "1px solid #e0e0e0",
+        background: "#f8f9fa",
       }}
     >
-      <div className="text-[8px] text-slate-600 tracking-[2px] uppercase mb-[7px] flex items-center gap-[6px]">
+      <div className="text-[8px] text-gray-400 tracking-[2px] uppercase mb-[7px] flex items-center gap-[6px]">
         <span>Combinations</span>
-        <span className="bg-white/5 text-slate-500 px-[6px] py-[1px] rounded-[10px]">
+        <span className="bg-gray-100 text-gray-9000 px-[6px] py-[1px] rounded-[10px]">
           {combos.length}
         </span>
       </div>
@@ -1276,11 +1302,11 @@ function ComboCalc({
               className="flex items-center gap-[5px] rounded-[5px]"
               style={{
                 padding: "4px 7px",
-                background: isC ? `${strategy.color}15` : "rgba(255,255,255,0.02)",
-                border: `1px solid ${isC ? `${strategy.color}40` : "rgba(255,255,255,0.04)"}`,
+                background: isC ? C.accentLight : "#ffffff",
+                border: `1px solid ${isC ? C.accent : "#f1f3f4"}`,
               }}
             >
-              <span className="text-[9px] text-slate-600 w-[14px] text-right shrink-0">
+              <span className="text-[9px] text-gray-400 w-[14px] text-right shrink-0">
                 {ci + 1}
               </span>
               <div className="flex gap-1 flex-1 flex-wrap items-center">
@@ -1288,10 +1314,10 @@ function ComboCalc({
                   <span key={ii} className="flex items-center gap-[2px]">
                     {ii > 0 && <span className="text-[8px] text-gray-800 mx-[1px]">+</span>}
                     <CarrierChip code={x.option.carrier} size={12} />
-                    <span className="text-[8px] text-slate-400 font-mono">
+                    <span className="text-[8px] text-gray-500 font-mono">
                       {x.option.segments[0]?.flightNumber}
                     </span>
-                    <span className="text-[8px] text-slate-500 max-w-[55px] overflow-hidden text-ellipsis whitespace-nowrap">
+                    <span className="text-[8px] text-gray-9000 max-w-[55px] overflow-hidden text-ellipsis whitespace-nowrap">
                       {x.variant.label}
                     </span>
                   </span>
@@ -1299,20 +1325,20 @@ function ComboCalc({
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {c.allFlex && (
-                  <span className="text-[7px] text-emerald-400 font-semibold">FLEX</span>
+                  <span className="text-[7px] text-emerald-700 font-semibold">FLEX</span>
                 )}
                 {isC && (
                   <span
                     className="text-[7px] font-bold rounded-[3px] px-[5px] py-[1px]"
-                    style={{ color: strategy.color, background: `${strategy.color}20` }}
+                    style={{ color: strategy.color, background: C.accentLight }}
                   >
                     LOW
                   </span>
                 )}
-                {delta > 0 && <span className="text-[8px] text-slate-500">+{pfmt(delta)}</span>}
+                {delta > 0 && <span className="text-[8px] text-gray-9000">+{pfmt(delta)}</span>}
                 <span
                   className="text-[11px] font-bold min-w-[60px] text-right"
-                  style={{ color: isC ? strategy.color : "#94a3b8" }}
+                  style={{ color: isC ? strategy.color : C.textSec }}
                 >
                   {pfmt(c.total)}
                 </span>
@@ -4242,21 +4268,21 @@ function ProposalViewer({ html, onBack }: { html: string; onBack: () => void }) 
   };
 
   return (
-    <div className="fixed inset-0 bg-[#080b14] flex flex-col z-[1000]">
-      <div className="shrink-0 flex items-center justify-between px-[14px] py-2 bg-[#080b14]/[0.98] border-b border-white/[0.07]">
+    <div className="fixed inset-0 bg-[#f8f9fa] flex flex-col z-[1000]">
+      <div className="shrink-0 flex items-center justify-between px-[14px] py-2 bg-[#f8f9fa]/[0.98] border-b border-gray-300">
         <div className="flex items-center gap-2">
           <button
             onClick={onBack}
-            className="bg-white/5 border border-white/10 text-slate-400 px-3 py-[5px] rounded-[5px] cursor-pointer text-[11px] font-semibold"
+            className="bg-gray-100 border border-gray-300 text-gray-500 px-3 py-[5px] rounded-[5px] cursor-pointer text-[11px] font-semibold"
           >
             ← Back
           </button>
-          <span className="text-[10px] text-slate-600 tracking-wider">PROPOSAL PREVIEW</span>
+          <span className="text-[10px] text-gray-400 tracking-wider">PROPOSAL PREVIEW</span>
         </div>
         <div className="flex gap-[6px]">
           <button
             onClick={print}
-            className="bg-white/5 border border-white/[0.12] text-slate-400 px-[13px] py-[5px] rounded-[5px] cursor-pointer text-[11px] font-semibold"
+            className="bg-gray-100 border border-gray-300 text-gray-500 px-[13px] py-[5px] rounded-[5px] cursor-pointer text-[11px] font-semibold"
           >
             ⎙ Print
           </button>
@@ -4571,14 +4597,16 @@ What are your client's priorities?`;
   const displayOptions = useMemo(() => {
     let opts = applyStrategyFilters(activeSlotOptions, currentFilters);
 
-    // Sort
+    // Sort — "minimize stops" makes stops the primary sort key
+    const minStops = currentFilters.stops === "minimize";
+    const priceOf = (o: Option) => Math.min(...o.variants.map((v) => v.perAdult));
+
     if (sortMode === "cheapest") {
-      opts.sort((a, b) => Math.min(...a.variants.map((v) => v.perAdult)) - Math.min(...b.variants.map((v) => v.perAdult)));
+      opts.sort((a, b) => (minStops && a.stops !== b.stops ? a.stops - b.stops : 0) || priceOf(a) - priceOf(b));
     } else if (sortMode === "fastest") {
-      opts.sort((a, b) => a.totalDurationMinutes - b.totalDurationMinutes);
+      opts.sort((a, b) => (minStops && a.stops !== b.stops ? a.stops - b.stops : 0) || a.totalDurationMinutes - b.totalDurationMinutes);
     } else {
-      // "best" — sort by score descending, then cheapest
-      opts.sort((a, b) => (b.score || 0) - (a.score || 0) || Math.min(...a.variants.map((v) => v.perAdult)) - Math.min(...b.variants.map((v) => v.perAdult)));
+      opts.sort((a, b) => (minStops && a.stops !== b.stops ? a.stops - b.stops : 0) || (b.score || 0) - (a.score || 0) || priceOf(a) - priceOf(b));
     }
 
     return opts;
@@ -4872,30 +4900,30 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
   ];
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ background: "#080b14", color: "#e2e8f0", fontFamily: "system-ui,-apple-system,sans-serif" }}>
+    <div className="h-screen flex flex-col overflow-hidden" style={{ background: C.bg, color: C.text, fontFamily: "system-ui,-apple-system,sans-serif" }}>
       {/* Top bar */}
-      <div className="shrink-0 flex items-center justify-between px-4 py-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(8,11,20,0.97)" }}>
+      <div className="shrink-0 flex items-center justify-between px-4 py-2" style={{ borderBottom: "1px solid #e0e0e0", background: C.surface }}>
         <div className="flex items-center gap-[10px]">
           {onNewSearch && (
             <button
               onClick={onNewSearch}
-              className="text-[10px] text-slate-500 bg-transparent border border-white/10 rounded px-2 py-1 cursor-pointer hover:text-slate-300 hover:border-white/20 transition-colors"
+              className="text-[10px] text-gray-9000 bg-transparent border border-gray-300 rounded px-2 py-1 cursor-pointer hover:text-gray-700 hover:border-gray-300 transition-colors"
             >
               ← New Search
             </button>
           )}
           <button
             onClick={onBack}
-            className="text-[10px] text-slate-500 bg-transparent border border-white/10 rounded px-2 py-1 cursor-pointer hover:text-slate-300 hover:border-white/20 transition-colors"
+            className="text-[10px] text-gray-9000 bg-transparent border border-gray-300 rounded px-2 py-1 cursor-pointer hover:text-gray-700 hover:border-gray-300 transition-colors"
           >
             Simple View
           </button>
-          <span className="text-indigo-400 text-[17px]">✦</span>
+          <span className="text-blue-600 text-[17px]">✦</span>
           <div>
-            <div className="text-[13px] font-bold text-slate-50 tracking-tight">
+            <div className="text-[13px] font-bold text-gray-900 tracking-tight">
               Flight Strategy Builder
             </div>
-            <div className="text-[8px] text-slate-600 tracking-[2px] uppercase">
+            <div className="text-[8px] text-gray-400 tracking-[2px] uppercase">
               {model.routeSummary} &nbsp;·&nbsp; {model.dateSummary} &nbsp;·&nbsp;{" "}
               {model.paxSummary}
             </div>
@@ -4913,8 +4941,8 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
                 className="text-[8px] font-semibold flex items-center gap-1 rounded px-[7px] py-[2px]"
                 style={{
                   color: s.color,
-                  background: `${s.color}18`,
-                  border: `1px solid ${s.color}35`,
+                  background: C.accentLight,
+                  border: `1px solid C.accentBorder`,
                 }}
               >
                 S{s.num} · {count} fare{count > 1 ? "s" : ""}
@@ -4926,9 +4954,9 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
 
       <div className="flex-1 flex overflow-hidden">
         {/* ── Left: Strategy workspace ── */}
-        <div className="w-[58%] shrink-0 flex flex-col overflow-hidden" style={{ borderRight: "1px solid rgba(255,255,255,0.05)" }}>
+        <div className="w-[58%] shrink-0 flex flex-col overflow-hidden" style={{ borderRight: "1px solid #e0e0e0" }}>
           {/* Strategy tabs */}
-          <div className="shrink-0 flex" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(0,0,0,0.2)" }}>
+          <div className="shrink-0 flex" style={{ borderBottom: "1px solid #e0e0e0", background: "#f8f9fa" }}>
             {model.strategies.map((s, i) => {
               const count = s.slots.reduce(
                 (n, sl) => n + (sels[s.id]?.[sl.id]?.size || 0),
@@ -4949,14 +4977,14 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
                   <div className="flex items-center gap-[5px] mb-[2px]">
                     <span
                       className="text-[15px] font-extrabold leading-none"
-                      style={{ color: active ? s.color : "#374155" }}
+                      style={{ color: active ? s.color : C.textMuted }}
                     >
                       {s.num}
                     </span>
                     {count > 0 && (
                       <span
                         className="text-[7px] font-bold rounded-[10px] px-[5px] py-[1px]"
-                        style={{ color: s.color, background: `${s.color}20` }}
+                        style={{ color: s.color, background: C.accentLight }}
                       >
                         {count}
                       </span>
@@ -4964,7 +4992,7 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
                   </div>
                   <div
                     className="text-[10px] font-semibold leading-tight"
-                    style={{ color: active ? "#f1f5f9" : "#4b5563" }}
+                    style={{ color: active ? C.text : C.textMuted }}
                   >
                     {s.label}
                   </div>
@@ -4974,19 +5002,19 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
           </div>
 
           {/* Tagline + pros/cons */}
-          <div className="shrink-0 px-[13px] pt-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-            <div className="text-[11px] text-slate-500 mb-[5px] italic">{strategy.tagline}</div>
+          <div className="shrink-0 px-[13px] pt-2" style={{ borderBottom: "1px solid #e0e0e0" }}>
+            <div className="text-[11px] text-gray-9000 mb-[5px] italic">{strategy.tagline}</div>
             <div className="flex gap-[14px] mb-2">
               <div className="flex-1">
                 {strategy.pros.map((p, i) => (
-                  <div key={i} className="text-[9px] text-emerald-400 mb-[2px]">
+                  <div key={i} className="text-[9px] text-emerald-700 mb-[2px]">
                     + {p}
                   </div>
                 ))}
               </div>
               <div className="flex-1">
                 {strategy.cons.map((c, i) => (
-                  <div key={i} className="text-[9px] text-red-400 mb-[2px]">
+                  <div key={i} className="text-[9px] text-red-600 mb-[2px]">
                     − {c}
                   </div>
                 ))}
@@ -5009,8 +5037,8 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
             className="shrink-0 flex items-center gap-[7px]"
             style={{
               padding: "5px 13px",
-              borderBottom: "1px solid rgba(255,255,255,0.04)",
-              background: "rgba(0,0,0,0.12)",
+              borderBottom: "1px solid #e0e0e0",
+              background: "#f8f9fa",
             }}
           >
             <div
@@ -5024,9 +5052,9 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
               {activeSlotDef?.label}
             </span>
             <span className="text-[9px] text-gray-800">—</span>
-            <span className="text-[9px] text-slate-600">{activeSlotDef?.coverage}</span>
+            <span className="text-[9px] text-gray-400">{activeSlotDef?.coverage}</span>
             {(aiSuggested[strategy.id]?.[activeSlot] || []).length > 0 && (
-              <span className="text-[8px] text-indigo-400 bg-indigo-400/10 border border-indigo-400/20 px-[6px] py-[1px] rounded-[10px]">
+              <span className="text-[8px] text-blue-600 bg-blue-50 border border-blue-200 px-[6px] py-[1px] rounded-[10px]">
                 ✦ {aiSuggested[strategy.id][activeSlot].length} AI
               </span>
             )}
@@ -5043,9 +5071,9 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
           {/* Sort bar */}
           <div
             className="shrink-0 flex items-center gap-[6px]"
-            style={{ padding: "5px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", background: "rgba(0,0,0,0.06)" }}
+            style={{ padding: "5px 12px", borderBottom: "1px solid #e0e0e0", background: "#f8f9fa" }}
           >
-            <div className="flex items-center rounded-[5px] overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div className="flex items-center rounded-[5px] overflow-hidden" style={{ border: "1px solid #dadce0" }}>
               {(["best", "cheapest", "fastest"] as const).map((m) => (
                 <button
                   key={m}
@@ -5053,15 +5081,15 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
                   className="border-none cursor-pointer text-[8px] font-semibold tracking-wide uppercase"
                   style={{
                     padding: "3px 8px",
-                    background: sortMode === m ? `${strategy.color}25` : "transparent",
-                    color: sortMode === m ? strategy.color : "#4b5563",
+                    background: sortMode === m ? C.accentLight : "transparent",
+                    color: sortMode === m ? strategy.color : C.textMuted,
                   }}
                 >
                   {m === "best" ? "Best" : m === "cheapest" ? "Price" : "Fast"}
                 </button>
               ))}
             </div>
-            <span className="text-[8px] text-slate-700 ml-auto">
+            <span className="text-[8px] text-gray-300 ml-auto">
               {displayOptions.length}/{activeSlotOptions.length}
             </span>
           </div>
@@ -5092,13 +5120,13 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
                 <div key={opt.id}>
                   {showDivider && (
                     <div className="flex items-center gap-2 my-[8px]">
-                      <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.06)" }} />
-                      <span className="text-[8px] text-slate-600 tracking-[1.5px] uppercase">More options</span>
-                      <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.06)" }} />
+                      <div className="flex-1 h-px" style={{ background: "#f1f3f4" }} />
+                      <span className="text-[8px] text-gray-400 tracking-[1.5px] uppercase">More options</span>
+                      <div className="flex-1 h-px" style={{ background: "#f1f3f4" }} />
                     </div>
                   )}
                   {idx === 0 && hasMoreSection && (
-                    <div className="text-[8px] text-slate-600 tracking-[1.5px] uppercase mb-[5px] px-1">
+                    <div className="text-[8px] text-gray-400 tracking-[1.5px] uppercase mb-[5px] px-1">
                       Recommended
                     </div>
                   )}
@@ -5118,7 +5146,7 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
               );
             })}
             {displayOptions.length === 0 && (
-              <div className="text-center py-12 text-slate-600 text-sm">
+              <div className="text-center py-12 text-gray-400 text-sm">
                 {activeSlotOptions.length === 0
                   ? "No options available for this slot."
                   : "No options match your filters."}
@@ -5132,16 +5160,16 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
         {/* ── Right: Chat ── */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Analyze button */}
-          <div className="shrink-0 px-[13px] pt-[10px] pb-[6px]" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+          <div className="shrink-0 px-[13px] pt-[10px] pb-[6px]" style={{ borderBottom: "1px solid #e0e0e0" }}>
             <button
               onClick={analyzeStrategy}
               disabled={loading}
               className="w-full rounded-[7px] border-none cursor-pointer text-white text-[10px] font-bold tracking-[1.5px] uppercase transition-all duration-200 flex items-center justify-center gap-[6px]"
               style={{
                 padding: "9px 14px",
-                background: loading ? "rgba(255,255,255,0.03)" : "linear-gradient(135deg, #8b7355, #a08b6a)",
+                background: loading ? "#ffffff" : "linear-gradient(135deg, #8b7355, #a08b6a)",
                 opacity: loading ? 0.4 : 1,
-                border: "1px solid rgba(139,115,85,0.3)",
+                border: "1px solid #c5b896",
               }}
               onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = "linear-gradient(135deg, #a08b6a, #b8a07d)"; }}
               onMouseLeave={(e) => { if (!loading) e.currentTarget.style.background = "linear-gradient(135deg, #8b7355, #a08b6a)"; }}
@@ -5162,14 +5190,14 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
             ))}
             {loading && (
               <div className="flex gap-2 mb-3">
-                <div className="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center text-[9px] font-extrabold bg-gray-900 text-indigo-400 border border-indigo-400/20">
+                <div className="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center text-[9px] font-extrabold bg-gray-900 text-blue-600 border border-blue-200">
                   ✦
                 </div>
                 <div
                   className="flex gap-1 items-center"
                   style={{
-                    background: "rgba(255,255,255,0.02)",
-                    border: "1px solid rgba(255,255,255,0.05)",
+                    background: "#ffffff",
+                    border: "1px solid #e0e0e0",
                     borderRadius: "10px 10px 10px 2px",
                     padding: "11px 14px",
                   }}
@@ -5192,7 +5220,7 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
 
           {/* Build proposal CTA */}
           {totalFares > 0 && (
-            <div className="shrink-0 px-[13px] py-2" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+            <div className="shrink-0 px-[13px] py-2" style={{ borderTop: "1px solid #e0e0e0" }}>
               <div className="flex gap-[3px] flex-wrap mb-[7px]">
                 {model.strategies.flatMap((s) =>
                   s.slots.map((sl) => {
@@ -5203,9 +5231,9 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
                         key={`${s.id}-${sl.id}`}
                         className="text-[8px] rounded px-[7px] py-[2px] whitespace-nowrap"
                         style={{
-                          background: `${s.color}18`,
+                          background: C.accentLight,
                           color: s.color,
-                          border: `1px solid ${s.color}30`,
+                          border: `1px solid C.accentBorder`,
                         }}
                       >
                         S{s.num} {sl.label} · {fares} fare{fares > 1 ? "s" : ""}
@@ -5234,7 +5262,7 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
             className="shrink-0 flex gap-[3px] flex-wrap"
             style={{
               padding: "5px 13px 3px",
-              borderTop: "1px solid rgba(255,255,255,0.04)",
+              borderTop: "1px solid #e0e0e0",
             }}
           >
             {quickPrompts.map((p, i) => (
@@ -5245,8 +5273,8 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
                 className="text-[9px] rounded-[20px] cursor-pointer whitespace-nowrap transition-all duration-100 hover:border-indigo-400 hover:text-indigo-300"
                 style={{
                   padding: "3px 9px",
-                  border: "1px solid rgba(255,255,255,0.07)",
-                  color: "#374155",
+                  border: "1px solid #e0e0e0",
+                  color: C.textMuted,
                   background: "transparent",
                   opacity: loading ? 0.4 : 1,
                 }}
@@ -5257,7 +5285,7 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
           </div>
 
           {/* Input */}
-          <div className="shrink-0 flex gap-2" style={{ borderTop: "1px solid rgba(255,255,255,0.05)", padding: "10px 13px" }}>
+          <div className="shrink-0 flex gap-2" style={{ borderTop: "1px solid #e0e0e0", padding: "10px 13px" }}>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -5271,14 +5299,14 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
               placeholder="Ask anything — e.g. 'add a business class option' to get new cards…"
               className="flex-1 rounded-lg text-xs outline-none"
               style={{
-                background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(255,255,255,0.07)",
+                background: "#ffffff",
+                border: "1px solid #e0e0e0",
                 padding: "9px 12px",
-                color: "#e2e8f0",
+                color: C.text,
                 fontFamily: "inherit",
               }}
-              onFocus={(e) => (e.target.style.borderColor = "rgba(129,140,248,0.4)")}
-              onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.07)")}
+              onFocus={(e) => (e.target.style.borderColor = C.accent)}
+              onBlur={(e) => (e.target.style.borderColor = "#e0e0e0")}
             />
             <button
               onClick={() => sendMsg(input)}
@@ -5303,7 +5331,7 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
         }
         ::-webkit-scrollbar { width: 3px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 2px; }
+        ::-webkit-scrollbar-thumb { background: #e0e0e0; border-radius: 2px; }
       `}</style>
     </div>
   );
