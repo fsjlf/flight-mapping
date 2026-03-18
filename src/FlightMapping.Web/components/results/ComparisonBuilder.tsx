@@ -372,29 +372,115 @@ function CarrierFareTabs({
           Fare class{option.variants.length > 1 ? "es" : ""}
         </div>
       )}
-      {(() => {
-        // Group activeItems by outbound cabin (cabins[0])
-        const cabinGroups = new Map<string, { variant: Variant; originalIndex: number }[]>();
-        const cabinOrder: string[] = [];
-        for (const item of activeItems) {
-          const outboundCabin = item.variant.cabins?.[0] || item.variant.cabin || "Economy";
-          if (!cabinGroups.has(outboundCabin)) {
-            cabinGroups.set(outboundCabin, []);
-            cabinOrder.push(outboundCabin);
-          }
-          cabinGroups.get(outboundCabin)!.push(item);
-        }
-        const showHeaders = cabinOrder.length > 1;
-        return cabinOrder.map((cabinName) => (
-          <div key={cabinName}>
-            {showHeaders && (
-              <div style={{ padding: "4px 12px", background: "#f8f9fa", borderTop: "1px solid #e0e0e0" }}>
-                <span style={{ fontSize: 9, fontWeight: 600, color: "#6b7280", letterSpacing: "1.5px", textTransform: "uppercase" as const }}>
-                  Outbound: {cabinName}
+      <CabinComboAccordion
+        items={activeItems}
+        option={option}
+        selectedVariantIndices={selectedVariantIndices}
+        onVariantToggle={onVariantToggle}
+        color={color}
+      />
+    </div>
+  );
+}
+
+/** Accordion that groups fare rows by cabin combination (e.g. "Business Out + Economy Back") */
+function CabinComboAccordion({
+  items,
+  option,
+  selectedVariantIndices,
+  onVariantToggle,
+  color,
+}: {
+  items: { variant: Variant; originalIndex: number }[];
+  option: Option;
+  selectedVariantIndices: Set<number>;
+  onVariantToggle: (optionId: string, variantIdx: number) => void;
+  color: string;
+}) {
+  // Group by full cabin combo key (e.g. "Business+Economy")
+  const cabinGroups = useMemo(() => {
+    const groups = new Map<string, { variant: Variant; originalIndex: number }[]>();
+    const order: string[] = [];
+    for (const item of items) {
+      const comboKey = item.variant.cabins?.join("+") || item.variant.cabin || "Economy";
+      if (!groups.has(comboKey)) {
+        groups.set(comboKey, []);
+        order.push(comboKey);
+      }
+      groups.get(comboKey)!.push(item);
+    }
+    return { groups, order };
+  }, [items]);
+
+  // First group is open by default (cheapest / searched cabin combo)
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    return new Set(cabinGroups.order.length > 0 ? [cabinGroups.order[0]] : []);
+  });
+
+  const toggleGroup = (key: string) => {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // Format cabin combo label: "Business Out + Economy Back" or just "Economy" for single-cabin
+  const formatComboLabel = (comboKey: string): string => {
+    const parts = comboKey.split("+");
+    if (parts.length === 1) return parts[0];
+    if (parts.length === 2) return `${parts[0]} Out + ${parts[1]} Back`;
+    return parts.join(" → ");
+  };
+
+  const isMultiGroup = cabinGroups.order.length > 1;
+
+  return (
+    <>
+      {cabinGroups.order.map((comboKey) => {
+        const groupItems = cabinGroups.groups.get(comboKey)!;
+        const isOpen = openGroups.has(comboKey);
+        const cheapest = Math.min(...groupItems.map((g) => g.variant.perAdult));
+        const hasSelected = groupItems.some((g) => selectedVariantIndices.has(g.originalIndex));
+
+        return (
+          <div key={comboKey}>
+            {/* Section header — always visible, click to expand/collapse */}
+            {isMultiGroup && (
+              <div
+                onClick={() => toggleGroup(comboKey)}
+                style={{
+                  padding: "7px 12px",
+                  background: isOpen ? "#f1f3f4" : "#fafafa",
+                  borderTop: "1px solid #e8eaed",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  transition: "background 0.1s",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 8, color: "#5f6368", transition: "transform 0.15s", transform: isOpen ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: "#202124" }}>
+                    {formatComboLabel(comboKey)}
+                  </span>
+                  <span style={{ fontSize: 9, color: "#5f6368" }}>
+                    ({groupItems.length} fare{groupItems.length > 1 ? "s" : ""})
+                  </span>
+                  {hasSelected && (
+                    <span style={{ fontSize: 7, color, fontWeight: 800 }}>●</span>
+                  )}
+                </div>
+                <span style={{ fontSize: 10, fontWeight: 600, color: "#202124" }}>
+                  from {pfmt(cheapest)}
                 </span>
               </div>
             )}
-            {cabinGroups.get(cabinName)!.map(({ variant: v, originalIndex: vi }) => {
+
+            {/* Fare rows — shown when open (or always if single group) */}
+            {(isOpen || !isMultiGroup) && groupItems.map(({ variant: v, originalIndex: vi }) => {
               // Build per-segment brand info for mixed-brand badge display
               const segs = v.itinerary?.segments;
               const segBrands = segs && segs.length > 1
@@ -420,9 +506,9 @@ function CarrierFareTabs({
               );
             })}
           </div>
-        ));
-      })()}
-    </div>
+        );
+      })}
+    </>
   );
 }
 
@@ -1290,14 +1376,20 @@ function ComboCalc({
       (acc, arr) => acc.flatMap((p) => arr.map((x) => [...p, x])),
       [[]] as ComboItem[][]
     );
-    return prod
-      .map((items) => ({
+    const mapped = prod.map((items) => {
+      const allFlex = items.every((x) => x.variant.refundable);
+      const allNonRef = items.every((x) => !x.variant.refundable);
+      return {
         items,
         total: items.reduce((s, x) => s + x.variant.perAdult, 0),
-        allFlex: items.every((x) => x.variant.refundable),
-      }))
-      .sort((a, b) => a.total - b.total)
-      .slice(0, 12);
+        allFlex,
+        partiallyRefundable: !allFlex && !allNonRef,
+      };
+    });
+    // Refundability coherence: suppress mixed combos when coherent ones exist
+    const coherent = mapped.filter((c) => !c.partiallyRefundable);
+    const filtered = coherent.length > 0 ? coherent : mapped;
+    return filtered.sort((a, b) => a.total - b.total).slice(0, 12);
   }, [strategy, resolveSlotItems]);
 
   if (!combos || combos.length < 2) return null;
@@ -1352,6 +1444,9 @@ function ComboCalc({
                 {c.allFlex && (
                   <span className="text-[7px] text-emerald-700 font-semibold">FLEX</span>
                 )}
+                {c.partiallyRefundable && (
+                  <span className="text-[7px] text-amber-700 font-semibold">PARTIAL</span>
+                )}
                 {isC && (
                   <span
                     className="text-[7px] font-bold rounded-[3px] px-[5px] py-[1px]"
@@ -1387,6 +1482,7 @@ interface Scenario {
   totalRaw: number;
   totalPrice: string;
   allFlex: boolean;
+  partiallyRefundable: boolean; // mixed refundability across tickets
   tickets: {
     ticketLabel: string;
     coverage: string;
@@ -1470,12 +1566,27 @@ function buildScenariosFromState(
       [[]] as (typeof slotItems[string][0])[][]
     );
 
-    product.forEach((combo, ci) => {
+    // ── Refundability coherence filter ──
+    // Classify combos: coherent (all-ref or all-nonref) vs partial (mixed)
+    const isRefundable = (x: typeof slotItems[string][0]) => {
+      const v = x.variant as Variant | AIOption["variants"][0];
+      return "refundable" in v && v.refundable;
+    };
+    const isCoherent = (combo: typeof product[0]) => {
+      if (combo.length <= 1) return true;
+      const first = isRefundable(combo[0]);
+      return combo.every((x) => isRefundable(x) === first);
+    };
+    const coherentCombos = product.filter(isCoherent);
+    // Keep coherent combos if any exist; otherwise surface all (partial) with label
+    const filteredProduct = coherentCombos.length > 0 ? coherentCombos : product;
+    const forcePartialLabel = coherentCombos.length === 0 && product.length > 0;
+
+    filteredProduct.forEach((combo, ci) => {
       const total = combo.reduce((s, x) => s + x.price, 0);
-      const allFlex = combo.every((x) => {
-        const v = x.variant as Variant | AIOption["variants"][0];
-        return "refundable" in v && v.refundable;
-      });
+      const allFlex = combo.every((x) => isRefundable(x));
+      const allNonRef = combo.every((x) => !isRefundable(x));
+      const partiallyRefundable = !allFlex && !allNonRef;
 
       const tickets = filledSlots.map((slot, si) => {
         const item = combo[si];
@@ -1557,6 +1668,7 @@ function buildScenariosFromState(
         totalRaw: total,
         totalPrice: pfmt(total),
         allFlex,
+        partiallyRefundable,
         tickets,
         rationale: null,
         tag: "",
@@ -2284,7 +2396,9 @@ ${sc.tickets.length > 1 ? sc.tickets.map((t) => `<tr><td style="${F}font-size:13
 }
 
 function htmlComparisonTable(scenarios: Scenario[]): string {
-  if (scenarios.length < 2) return "";
+  // Only show summary table when there are 3+ options — with fewer,
+  // the client just read the same rows in the fare table above.
+  if (scenarios.length < 3) return "";
   const compRows = scenarios.map((sc, i) => {
     const bg = sc.highlight ? "#fefce8" : (i % 2 === 0 ? "#ffffff" : "#f7f6f3");
     const numStyle = sc.highlight
@@ -2565,21 +2679,121 @@ function renderRoundtrip(scenarios: Scenario[], model: StrategyModel, copy: Prop
   ].join(""));
 }
 
-/** Render a multi-row fare table for grouped scenarios sharing the same physical routing. */
-function htmlMultiFareTable(scenarios: Scenario[]): string {
-  const rows = scenarios.map((sc) => {
-    const ticket = sc.tickets[0];
-    if (!ticket) return "";
-    const packageName = buildPackageName(ticket);
-    const fareDetailsHtml = buildFareDetailsHtml(ticket);
+/** Extract all displayable fare badges (terms + amenities) from a ticket as a flat string array. */
+function extractFareBadges(ticket: Scenario["tickets"][0]): { terms: string[]; amenities: string[] } {
+  const ft = ticket.fareTerms;
+  const terms: string[] = [];
+  if (ft) {
+    terms.push(ft.refundSummary);
+    if (ft.changeSummary && ft.changeSummary !== "No Changes") terms.push(ft.changeSummary);
+  } else {
+    terms.push(ticket.refundable ? "Refundable" : "Non-refundable");
+  }
 
-    const isRefundable = ticket.refundable;
+  const flights = ticket.flights;
+  const perFlightAmenities = flights.map((f: any) => {
+    if (f.features && f.features.length > 0) return pickNotableFeatures(f.features);
+    return [] as string[];
+  });
+  const hasPerFlight = perFlightAmenities.some((items) => items.length > 0);
+
+  let amenities: string[] = [];
+  if (!hasPerFlight) {
+    if (ft?.baggage) amenities.push(ft.baggage);
+    if (ft?.seatType) amenities.push(ft.seatType);
+  } else {
+    // Flatten all per-flight amenities into one set (with direction prefix if they differ)
+    const flightBrands = flights.map((f: any) => (f.brand || "").toUpperCase().trim());
+    const flightCabins = flights.map((f: any) => (f.cabin || "Economy").toUpperCase().trim());
+    const sameBrand = flightBrands.length <= 1 || (flightBrands[0] && flightBrands.every((b: string) => b === flightBrands[0]));
+    const sameCabin = flightCabins.length <= 1 || flightCabins.every((c: string) => c === flightCabins[0]);
+    const sameProduct = sameBrand || sameCabin;
+    const normalise = (items: string[]) => [...items].sort().join("|");
+    const allSame = sameProduct || perFlightAmenities.length <= 1 ||
+      perFlightAmenities.every((items) => normalise(items) === normalise(perFlightAmenities[0]));
+    if (allSame) {
+      amenities = [...perFlightAmenities].sort((a, b) => b.length - a.length)[0] || [];
+    } else {
+      const dirLabels = flights.length === 2 ? ["outbound", "return"] : flights.map((f: any) => f.route || "");
+      flights.forEach((_f: any, i: number) => {
+        for (const item of perFlightAmenities[i]) {
+          amenities.push(`${item} (${dirLabels[i]})`);
+        }
+      });
+    }
+  }
+  return { terms, amenities };
+}
+
+/** Render a multi-row fare table for grouped scenarios sharing the same physical routing.
+ *  When multiple fare packages share the same amenities, factors out the common baseline
+ *  into a header note and shows only what differs per row. */
+function htmlMultiFareTable(scenarios: Scenario[]): string {
+  const termBadge = (t: string) => {
+    const isGreen = /refundable|free|flex|included/i.test(t) && !/non-refundable/i.test(t);
+    const isPaid = /\(paid\)/i.test(t);
+    const color = isPaid ? "#999999" : isGreen ? "#2e7d32" : "#555555";
+    return `<span style="${F}font-size:11px;color:${color};display:inline-block;margin-right:6px;margin-bottom:2px;">&#x2713; ${t}</span>`;
+  };
+
+  // Extract structured badge data for each scenario
+  const perScenario = scenarios.map((sc) => {
+    const ticket = sc.tickets[0];
+    if (!ticket) return { terms: [] as string[], amenities: [] as string[], packageName: "", ticket: null as any };
+    return {
+      ...extractFareBadges(ticket),
+      packageName: buildPackageName(ticket),
+      ticket,
+    };
+  });
+
+  // Find shared amenities across ALL scenarios
+  const amenitySets = perScenario.map((p) => new Set(p.amenities));
+  const sharedAmenities = perScenario[0]?.amenities.filter((a) =>
+    amenitySets.every((s) => s.has(a))
+  ) || [];
+  const sharedAmenitySet = new Set(sharedAmenities);
+
+  // Find shared terms across ALL scenarios
+  const termSets = perScenario.map((p) => new Set(p.terms));
+  const sharedTerms = perScenario[0]?.terms.filter((t) =>
+    termSets.every((s) => s.has(t))
+  ) || [];
+  const sharedTermSet = new Set(sharedTerms);
+
+  // Build baseline header note if there are shared amenities
+  let baselineHtml = "";
+  if (sharedAmenities.length > 0 || sharedTerms.length > 0) {
+    const allShared = [...sharedTerms, ...sharedAmenities];
+    baselineHtml = `<tr><td colspan="2" style="padding:10px 14px;background-color:#fafaf8;border-bottom:1px solid #e8e4de;">
+<p style="margin:0;${F}font-size:11px;color:#888888;line-height:1.7;">
+<span style="${F}font-size:10px;letter-spacing:0.5px;text-transform:uppercase;color:#8b7355;font-weight:bold;">Both packages include: </span>
+${allShared.join(" &middot; ")}</p></td></tr>`;
+  }
+
+  const rows = perScenario.map((p, idx) => {
+    if (!p.ticket) return "";
+    const sc = scenarios[idx];
+
+    // Only show terms and amenities that differ from the shared baseline
+    const uniqueTerms = p.terms.filter((t) => !sharedTermSet.has(t));
+    const uniqueAmenities = p.amenities.filter((a) => !sharedAmenitySet.has(a));
+    const diffBadges = [...uniqueTerms, ...uniqueAmenities];
+
+    const isRefundable = p.ticket.refundable;
     const rowBg = isRefundable ? "#f7fdf7" : "#ffffff";
+
+    // If there are no shared items, fall back to full display
+    const badgesHtml = (sharedAmenities.length > 0 || sharedTerms.length > 0)
+      ? (diffBadges.length > 0
+          ? `<p style="margin:2px 0 0 0;line-height:1.7;">${diffBadges.map(termBadge).join("")}</p>`
+          : "")
+      : buildFareDetailsHtml(p.ticket);
 
     return `<tr style="background-color:${rowBg};">
 <td style="padding:12px 14px;${F}border-bottom:1px solid #e8e4de;">
-<p style="margin:0 0 4px 0;${F}font-size:13px;color:#2c2c2c;font-weight:bold;">${packageName}</p>
-${fareDetailsHtml}
+<p style="margin:0 0 4px 0;${F}font-size:13px;color:#2c2c2c;font-weight:bold;">${p.packageName}</p>
+${badgesHtml}
 </td>
 <td style="padding:12px 14px;${F}font-size:15px;color:#2c2c2c;font-weight:bold;text-align:right;vertical-align:top;border-bottom:1px solid #e8e4de;">${sc.totalPrice}</td></tr>`;
   }).join("");
@@ -2588,7 +2802,7 @@ ${fareDetailsHtml}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e8e4de;">
 <tr><td style="background-color:#2c2c2c;padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;">Package &amp; Fare</td>
 <td style="background-color:#2c2c2c;padding:9px 14px;${F}font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#e8e4de;text-align:right;">Per Person</td></tr>
-${rows}
+${baselineHtml}${rows}
 </table></td></tr>`;
 }
 
