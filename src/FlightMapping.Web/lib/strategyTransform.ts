@@ -45,6 +45,7 @@ export interface Option {
   stops: number;
   score: number;
   variants: Variant[];
+  otherVariants?: Variant[]; // filtered-out variants available under "Other"
 }
 
 export interface Slot {
@@ -335,7 +336,7 @@ function groupIntoOptions(itineraries: EnrichedItinerary[]): Option[] {
     });
 
     // Smart deduplication: reduce 15+ fare variants to the meaningful few
-    const pruned = pruneVariants(variants);
+    const { kept, other } = pruneVariants(variants);
 
     return {
       id: `opt_${primary.id}`,
@@ -347,7 +348,8 @@ function groupIntoOptions(itineraries: EnrichedItinerary[]): Option[] {
       totalDurationMinutes: primary.totalDurationMinutes,
       stops: totalStops(primary.segments),
       score: primary.scores.overall,
-      variants: pruned,
+      variants: kept,
+      otherVariants: other,
     };
   });
 }
@@ -361,8 +363,8 @@ function groupIntoOptions(itineraries: EnrichedItinerary[]): Option[] {
  * 3. Remove near-duplicates (within $15, same refundability)
  * 4. Cap at ~8 total variants across all cabin combos
  */
-function pruneVariants(variants: Variant[]): Variant[] {
-  if (variants.length <= 4) return variants; // already manageable
+function pruneVariants(variants: Variant[]): { kept: Variant[]; other: Variant[] } {
+  if (variants.length <= 4) return { kept: variants, other: [] };
 
   // Group by cabin combination key (e.g. "Business+Economy")
   const cabinGroups = new Map<string, Variant[]>();
@@ -421,7 +423,10 @@ function pruneVariants(variants: Variant[]): Variant[] {
   }
 
   // Cap at 8 variants max, sorted by price
-  return deduped.slice(0, 8);
+  const final = deduped.slice(0, 8);
+  const finalSet = new Set(final);
+  const other = variants.filter((v) => !finalSet.has(v)).sort((a, b) => a.perAdult - b.perAdult);
+  return { kept: final, other };
 }
 
 // ── Main Transform ────────────────────────────────────────────────────────────

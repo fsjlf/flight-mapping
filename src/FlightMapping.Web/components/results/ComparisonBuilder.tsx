@@ -374,6 +374,7 @@ function CarrierFareTabs({
       )}
       <CabinComboAccordion
         items={activeItems}
+        otherVariants={option.otherVariants || []}
         option={option}
         selectedVariantIndices={selectedVariantIndices}
         onVariantToggle={onVariantToggle}
@@ -386,12 +387,14 @@ function CarrierFareTabs({
 /** Accordion that groups fare rows by cabin combination (e.g. "Business Out + Economy Back") */
 function CabinComboAccordion({
   items,
+  otherVariants,
   option,
   selectedVariantIndices,
   onVariantToggle,
   color,
 }: {
   items: { variant: Variant; originalIndex: number }[];
+  otherVariants: Variant[];
   option: Option;
   selectedVariantIndices: Set<number>;
   onVariantToggle: (optionId: string, variantIdx: number) => void;
@@ -508,6 +511,63 @@ function CabinComboAccordion({
           </div>
         );
       })}
+
+      {/* "Other" section — filtered-out variants, collapsed by default */}
+      {otherVariants.length > 0 && (() => {
+        const isOtherOpen = openGroups.has("__other__");
+        return (
+          <div>
+            <div
+              onClick={() => toggleGroup("__other__")}
+              style={{
+                padding: "6px 12px",
+                background: "#fafafa",
+                borderTop: "1px solid #e8eaed",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 8, color: "#9aa0a6", transition: "transform 0.15s", transform: isOtherOpen ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+                <span style={{ fontSize: 9, fontWeight: 500, color: "#9aa0a6" }}>
+                  Other fares
+                </span>
+                <span style={{ fontSize: 8, color: "#9aa0a6" }}>
+                  ({otherVariants.length})
+                </span>
+              </div>
+            </div>
+            {isOtherOpen && otherVariants.map((v, idx) => {
+              const segs = v.itinerary?.segments;
+              const segBrands = segs && segs.length > 1
+                ? segs.map((s) => ({
+                    origin: s.origin,
+                    destination: s.destination,
+                    brand: s.brand?.name || (s.cabin || "Economy"),
+                    cabin: s.cabin || "Economy",
+                  }))
+                : undefined;
+              // Use offset index so selection doesn't collide with main variants
+              const offsetIdx = option.variants.length + idx;
+              return (
+                <FareRow
+                  key={`other_${idx}`}
+                  label={v.label}
+                  perAdult={v.perAdult}
+                  refundable={v.refundable}
+                  fareTerms={v.fareTerms}
+                  checked={selectedVariantIndices.has(offsetIdx)}
+                  onToggle={() => onVariantToggle(option.id, offsetIdx)}
+                  color={color}
+                  segmentBrands={segBrands}
+                />
+              );
+            })}
+          </div>
+        );
+      })()}
     </>
   );
 }
