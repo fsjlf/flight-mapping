@@ -334,6 +334,9 @@ function groupIntoOptions(itineraries: EnrichedItinerary[]): Option[] {
       };
     });
 
+    // Smart deduplication: reduce 15+ fare variants to the meaningful few
+    const pruned = pruneVariants(variants);
+
     return {
       id: `opt_${primary.id}`,
       carrier: primary.validatingCarrier,
@@ -344,9 +347,81 @@ function groupIntoOptions(itineraries: EnrichedItinerary[]): Option[] {
       totalDurationMinutes: primary.totalDurationMinutes,
       stops: totalStops(primary.segments),
       score: primary.scores.overall,
-      variants,
+      variants: pruned,
     };
   });
+}
+
+/**
+ * Reduce a large set of fare variants to the meaningfully distinct options.
+ *
+ * Strategy:
+ * 1. Group by cabin combination (outbound+return cabin classes)
+ * 2. Within each cabin combo, keep: cheapest + cheapest refundable (if different)
+ * 3. Remove near-duplicates (within $15, same refundability)
+ * 4. Cap at ~8 total variants across all cabin combos
+ */
+function pruneVariants(variants: Variant[]): Variant[] {
+  if (variants.length <= 4) return variants; // already manageable
+
+  // Group by cabin combination key (e.g. "Business+Economy")
+  const cabinGroups = new Map<string, Variant[]>();
+  for (const v of variants) {
+    const cabinKey = v.cabins.join("+");
+    if (!cabinGroups.has(cabinKey)) cabinGroups.set(cabinKey, []);
+    cabinGroups.get(cabinKey)!.push(v);
+  }
+
+  const kept: Variant[] = [];
+
+  for (const [, group] of cabinGroups) {
+    // Sort by price ascending
+    const sorted = [...group].sort((a, b) => a.perAdult - b.perAdult);
+
+    // Always keep cheapest
+    const cheapest = sorted[0];
+    kept.push(cheapest);
+
+    // Keep cheapest refundable if different price (>$15 gap) and actually refundable
+    const cheapestRefundable = sorted.find(
+      (v) => v.refundable && Math.abs(v.perAdult - cheapest.perAdult) > 15
+    );
+    if (cheapestRefundable) kept.push(cheapestRefundable);
+
+    // Keep cheapest non-refundable if the cheapest overall was refundable
+    if (cheapest.refundable) {
+      const cheapestNonRef = sorted.find(
+        (v) => !v.refundable && Math.abs(v.perAdult - cheapest.perAdult) > 15
+      );
+      if (cheapestNonRef) kept.push(cheapestNonRef);
+    }
+
+    // If there's a significant price tier we haven't captured (>$200 gap from anything kept)
+    for (const v of sorted) {
+      const alreadyNear = kept.some(
+        (k) => k.cabins.join("+") === v.cabins.join("+") && Math.abs(k.perAdult - v.perAdult) < 200
+      );
+      if (!alreadyNear) {
+        kept.push(v);
+      }
+    }
+  }
+
+  // Deduplicate: remove variants within $15 of each other with same refundability
+  const deduped: Variant[] = [];
+  const sortedKept = [...kept].sort((a, b) => a.perAdult - b.perAdult);
+  for (const v of sortedKept) {
+    const isDupe = deduped.some(
+      (d) =>
+        Math.abs(d.perAdult - v.perAdult) < 15 &&
+        d.refundable === v.refundable &&
+        d.cabins.join("+") === v.cabins.join("+")
+    );
+    if (!isDupe) deduped.push(v);
+  }
+
+  // Cap at 8 variants max, sorted by price
+  return deduped.slice(0, 8);
 }
 
 // ── Main Transform ────────────────────────────────────────────────────────────
