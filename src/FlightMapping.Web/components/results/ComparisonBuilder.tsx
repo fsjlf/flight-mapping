@@ -213,7 +213,7 @@ function FareRow({
         {!isMixedBrand ? (
           <span
             className="text-[10px] flex-1"
-            style={{ fontWeight: checked ? 700 : 400, color: checked ? C.text : C.textSec }}
+            style={{ fontWeight: checked ? 700 : 400, color: C.text }}
           >
             {label}
           </span>
@@ -271,19 +271,19 @@ function FareRow({
             <span className="text-[7px] text-amber-600/80">{fareTerms.refundSummary}</span>
           )}
           {fareTerms.changePolicy === "free" && (
-            <span className="text-[7px] text-sky-400/70">Free Changes</span>
+            <span className="text-[7px]" style={{ color: "#1a73e8" }}>Free Changes</span>
           )}
           {fareTerms.changePolicy === "fee" && (
-            <span className="text-[7px] text-gray-900">Changes for Fee</span>
+            <span className="text-[7px]" style={{ color: "#1a73e8" }}>Changes for Fee</span>
           )}
           {fareTerms.baggage && (
-            <span className="text-[7px] text-gray-900">{fareTerms.baggage}</span>
+            <span className="text-[7px]" style={{ color: "#1a73e8" }}>{fareTerms.baggage}</span>
           )}
           {fareTerms.seatType && (
-            <span className="text-[7px] text-purple-400/70">{fareTerms.seatType}</span>
+            <span className="text-[7px]" style={{ color: "#1a73e8" }}>{fareTerms.seatType}</span>
           )}
           {fareTerms.seatsAvailable > 0 && fareTerms.seatsAvailable <= 4 && (
-            <span className="text-[7px] text-red-600/70">{fareTerms.seatsAvailable} left</span>
+            <span className="text-[7px]" style={{ color: "#c5221f", fontWeight: 600 }}>{fareTerms.seatsAvailable} left</span>
           )}
         </div>
       )}
@@ -334,7 +334,7 @@ function CarrierFareTabs({
     <div className="px-2 pb-2" style={{ borderTop: "1px solid #e0e0e0" }}>
       {showTabs ? (
         <div className="flex items-center gap-[3px] px-[6px] pt-[5px] pb-[4px] flex-wrap">
-          <span className="text-[7px] text-gray-400 tracking-[1.5px] uppercase font-semibold mr-1">
+          <span className="text-[7px] tracking-[1.5px] uppercase mr-1" style={{ color: "#6b7280", fontWeight: 600 }}>
             Fares via
           </span>
           {carrierGroups.order.map((vc) => {
@@ -368,7 +368,7 @@ function CarrierFareTabs({
           })}
         </div>
       ) : (
-        <div className="text-[7px] text-gray-400 tracking-[1.5px] uppercase px-[10px] pt-[5px] pb-[3px] font-semibold">
+        <div className="text-[7px] tracking-[1.5px] uppercase px-[10px] pt-[5px] pb-[3px]" style={{ color: "#6b7280", fontWeight: 600 }}>
           Fare class{option.variants.length > 1 ? "es" : ""}
         </div>
       )}
@@ -628,11 +628,11 @@ function OptionCard({
             })()}
           </div>
           <div className="flex items-center gap-[5px] mt-[2px]">
-            <span className="text-[9px] text-gray-900 font-medium">
+            <span className="text-[9px] text-gray-900 font-semibold">
               {option.carrierName}
             </span>
             {option.segments.map((seg, i) => (
-              <span key={i} className="text-[8px] font-mono text-gray-500">{seg.flightNumber}</span>
+              <span key={i} className="text-[8px] font-mono text-gray-500 font-semibold">{seg.flightNumber}</span>
             ))}
             {isAISuggested && (
               <span className="text-[7px] font-bold tracking-wider text-blue-600 bg-blue-50 border border-blue-200 px-[4px] py-[0.5px] rounded-[3px]">
@@ -668,7 +668,7 @@ function OptionCard({
               </span>
             )}
             {!isCheapest && priceVsCheapest != null && priceVsCheapest > 0 && (
-              <span className="text-[8px] text-gray-400">+{pfmt(priceVsCheapest)}</span>
+              <span className="text-[8px] text-gray-500">+{pfmt(priceVsCheapest)}</span>
             )}
             {anyChecked && (
               <span
@@ -699,7 +699,7 @@ function OptionCard({
             return (
               <div key={i} className="flex items-center gap-[6px] pl-[23px]">
                 <CarrierChip code={seg.marketingCarrier} size={12} />
-                <span className="font-mono text-[8px] font-bold text-gray-400 w-[38px] shrink-0">
+                <span className="font-mono text-[8px] font-bold text-gray-500 w-[38px] shrink-0">
                   {seg.flightNumber}
                 </span>
                 <span className="text-[10px] font-bold text-gray-700">
@@ -712,7 +712,7 @@ function OptionCard({
                 {segPlusDays > 0 && (
                   <sup className="text-[7px] font-bold text-orange-600" style={{ position: "relative", top: -3 }}>+{segPlusDays}</sup>
                 )}
-                <span className="text-[8px] text-gray-400">
+                <span className="text-[8px] text-gray-500">
                   {seg.origin}–{seg.destination}
                 </span>
                 {seg.cabin && seg.cabin !== "Economy" && (
@@ -773,10 +773,10 @@ function OptionCard({
                               <span className="text-[11px] font-bold text-gray-800">{tfmt(leg.departureTime)}</span>
                               <span className="text-[9px] text-gray-900">{dfmt(leg.departureTime)}</span>
                             </div>
-                            <div className="text-[9px] text-gray-500">
+                            <div className="text-[9px] text-gray-700 font-semibold">
                               {leg.originCity ? `${leg.originCity} (${leg.origin})` : leg.origin}
                             </div>
-                            <div className="text-[8px] text-gray-400 mt-[3px]">
+                            <div className="text-[8px] text-gray-500 mt-[3px]">
                               Travel time: {Math.floor(leg.durationMinutes / 60)}h {leg.durationMinutes % 60}m
                             </div>
                           </div>
@@ -800,13 +800,13 @@ function OptionCard({
                               )}
                               <span className="text-[9px] text-gray-900">{dfmt(leg.arrivalTime)}</span>
                             </div>
-                            <div className="text-[9px] text-gray-500">
+                            <div className="text-[9px] text-gray-700 font-semibold">
                               {leg.destinationCity ? `${leg.destinationCity} (${leg.destination})` : leg.destination}
                             </div>
                             {/* Carrier + aircraft info */}
                             <div className="flex items-center gap-[6px] mt-[4px] flex-wrap">
                               <CarrierChip code={leg.marketingCarrier} size={14} />
-                              <span className="text-[8px] text-gray-900">
+                              <span className="text-[8px] text-gray-600 font-medium">
                                 {CARRIER_FULL_NAMES[leg.marketingCarrier] || leg.marketingCarrier}
                                 {" · "}
                                 {seg.cabin}
@@ -814,7 +814,7 @@ function OptionCard({
                                 {leg.flightNumber}
                               </span>
                               {acName && (
-                                <span className="text-[8px] text-gray-400">· {acName}</span>
+                                <span className="text-[8px] text-gray-600">· {acName}</span>
                               )}
                             </div>
                             {isCodeshare && (
@@ -858,7 +858,7 @@ function OptionCard({
                 </div>
               ) : (
                 /* Fallback when no legs data — show basic segment info */
-                <div className="text-[9px] text-gray-400 flex gap-2 items-center py-[2px]">
+                <div className="text-[9px] text-gray-600 flex gap-2 items-center py-[2px]">
                   <CarrierChip code={seg.marketingCarrier} size={14} />
                   <span className="font-semibold text-gray-900">{seg.flightNumber}</span>
                   {seg.equipment && <span>· {aircraftName(seg.equipment)}</span>}
@@ -870,13 +870,6 @@ function OptionCard({
               )}
             </div>
           ))}
-        </div>
-      )}
-
-      {/* ── Fare Classes label ── */}
-      {showFares && (
-        <div style={{ borderTop: "1px solid #e0e0e0", padding: "6px 12px 2px" }}>
-          <span className="text-[10px] tracking-[2px] uppercase" style={{ color: "#9aa0a6" }}>Fare Classes</span>
         </div>
       )}
 
@@ -1187,7 +1180,7 @@ function SlotTabs({
               className="rounded-[7px] transition-all duration-150"
               style={{
                 padding: "8px 10px",
-                border: `1.5px ${isFilled ? "solid" : "dashed"} ${isActive ? strategy.color : isFilled ? C.accent : "#dadce0"}`,
+                border: `1.5px ${isFilled ? "solid" : "dashed"} ${isActive ? strategy.color : isFilled ? C.accent : "#9aa0a6"}`,
                 background: isActive
                   ? C.accentLight
                   : isFilled
@@ -1197,14 +1190,14 @@ function SlotTabs({
               }}
             >
               <div
-                className="text-[7px] font-bold tracking-[2px] mb-[2px] uppercase"
-                style={{ color: isActive ? strategy.color : C.textMuted }}
+                className="text-[7px] tracking-[2px] mb-[2px] uppercase"
+                style={{ color: isActive ? strategy.color : C.text, fontWeight: 700 }}
               >
                 {slot.label}
               </div>
               <div
                 className="text-[10px] font-semibold mb-[3px] leading-tight"
-                style={{ color: isFilled ? C.text : C.textMuted }}
+                style={{ color: isFilled ? C.text : C.textSec }}
               >
                 {slot.coverage}
               </div>
@@ -1225,7 +1218,7 @@ function SlotTabs({
                   <span
                     className="text-[9px]"
                     style={{
-                      color: isActive ? strategy.color : C.textMuted,
+                      color: isActive ? "#1a73e8" : C.textSec,
                       fontWeight: isActive ? 600 : 400,
                     }}
                   >
@@ -4991,7 +4984,7 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
                   </div>
                   <div
                     className="text-[10px] font-semibold leading-tight"
-                    style={{ color: active ? C.text : C.textMuted }}
+                    style={{ color: active ? C.text : C.textSec }}
                   >
                     {s.label}
                   </div>
@@ -5002,18 +4995,18 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
 
           {/* Tagline + pros/cons */}
           <div className="shrink-0 px-[13px] pt-2" style={{ borderBottom: "1px solid #e0e0e0" }}>
-            <div className="text-[11px] text-gray-900 mb-[5px] italic">{strategy.tagline}</div>
+            <div className="text-[11px] text-gray-600 mb-[5px] italic">{strategy.tagline}</div>
             <div className="flex gap-[14px] mb-2">
               <div className="flex-1">
                 {strategy.pros.map((p, i) => (
-                  <div key={i} className="text-[9px] text-emerald-700 mb-[2px]">
+                  <div key={i} className="text-[9px] text-emerald-700 font-medium mb-[2px]">
                     + {p}
                   </div>
                 ))}
               </div>
               <div className="flex-1">
                 {strategy.cons.map((c, i) => (
-                  <div key={i} className="text-[9px] text-red-600 mb-[2px]">
+                  <div key={i} className="text-[9px] text-red-600 font-medium mb-[2px]">
                     − {c}
                   </div>
                 ))}
@@ -5042,16 +5035,16 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
           >
             <div
               className="w-[5px] h-[5px] rounded-full shrink-0"
-              style={{ background: strategy.color }}
+              style={{ background: "#1a73e8" }}
             />
             <span
               className="text-[9px] font-bold tracking-[2px] uppercase"
-              style={{ color: strategy.color }}
+              style={{ color: C.text }}
             >
               {activeSlotDef?.label}
             </span>
             <span className="text-[9px] text-gray-800">—</span>
-            <span className="text-[9px] text-gray-400">{activeSlotDef?.coverage}</span>
+            <span className="text-[9px]" style={{ color: C.textSec }}>{activeSlotDef?.coverage}</span>
             {(aiSuggested[strategy.id]?.[activeSlot] || []).length > 0 && (
               <span className="text-[8px] text-blue-600 bg-blue-50 border border-blue-200 px-[6px] py-[1px] rounded-[10px]">
                 ✦ {aiSuggested[strategy.id][activeSlot].length} AI
