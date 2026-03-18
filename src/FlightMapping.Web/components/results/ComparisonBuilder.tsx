@@ -331,7 +331,7 @@ function CarrierFareTabs({
   const activeItems = carrierGroups.groups.get(activeCarrier) || [];
 
   return (
-    <div className="px-2 pb-2" style={{ borderTop: "1px solid #e0e0e0" }}>
+    <div className="px-2 pb-2">
       {showTabs ? (
         <div className="flex items-center gap-[3px] px-[6px] pt-[5px] pb-[4px] flex-wrap">
           <span className="text-[7px] tracking-[1.5px] uppercase mr-1" style={{ color: "#6b7280", fontWeight: 600 }}>
@@ -372,31 +372,56 @@ function CarrierFareTabs({
           Fare class{option.variants.length > 1 ? "es" : ""}
         </div>
       )}
-      {activeItems.map(({ variant: v, originalIndex: vi }) => {
-        // Build per-segment brand info for mixed-brand badge display
-        const segs = v.itinerary?.segments;
-        const segBrands = segs && segs.length > 1
-          ? segs.map((s) => ({
-              origin: s.origin,
-              destination: s.destination,
-              brand: s.brand?.name || (s.cabin || "Economy"),
-              cabin: s.cabin || "Economy",
-            }))
-          : undefined;
-        return (
-          <FareRow
-            key={vi}
-            label={v.label}
-            perAdult={v.perAdult}
-            refundable={v.refundable}
-            fareTerms={v.fareTerms}
-            checked={selectedVariantIndices.has(vi)}
-            onToggle={() => onVariantToggle(option.id, vi)}
-            color={color}
-            segmentBrands={segBrands}
-          />
-        );
-      })}
+      {(() => {
+        // Group activeItems by outbound cabin (cabins[0])
+        const cabinGroups = new Map<string, { variant: Variant; originalIndex: number }[]>();
+        const cabinOrder: string[] = [];
+        for (const item of activeItems) {
+          const outboundCabin = item.variant.cabins?.[0] || item.variant.cabin || "Economy";
+          if (!cabinGroups.has(outboundCabin)) {
+            cabinGroups.set(outboundCabin, []);
+            cabinOrder.push(outboundCabin);
+          }
+          cabinGroups.get(outboundCabin)!.push(item);
+        }
+        const showHeaders = cabinOrder.length > 1;
+        return cabinOrder.map((cabinName) => (
+          <div key={cabinName}>
+            {showHeaders && (
+              <div style={{ padding: "4px 12px", background: "#f8f9fa", borderTop: "1px solid #e0e0e0" }}>
+                <span style={{ fontSize: 9, fontWeight: 600, color: "#6b7280", letterSpacing: "1.5px", textTransform: "uppercase" as const }}>
+                  Outbound: {cabinName}
+                </span>
+              </div>
+            )}
+            {cabinGroups.get(cabinName)!.map(({ variant: v, originalIndex: vi }) => {
+              // Build per-segment brand info for mixed-brand badge display
+              const segs = v.itinerary?.segments;
+              const segBrands = segs && segs.length > 1
+                ? segs.map((s) => ({
+                    origin: s.origin,
+                    destination: s.destination,
+                    brand: s.brand?.name || (s.cabin || "Economy"),
+                    cabin: s.cabin || "Economy",
+                  }))
+                : undefined;
+              return (
+                <FareRow
+                  key={vi}
+                  label={v.label}
+                  perAdult={v.perAdult}
+                  refundable={v.refundable}
+                  fareTerms={v.fareTerms}
+                  checked={selectedVariantIndices.has(vi)}
+                  onToggle={() => onVariantToggle(option.id, vi)}
+                  color={color}
+                  segmentBrands={segBrands}
+                />
+              );
+            })}
+          </div>
+        ));
+      })()}
     </div>
   );
 }
@@ -609,7 +634,7 @@ function OptionCard({
               {tfmt(overallArr)}
             </span>
             {plusDays > 0 && (
-              <sup className="text-[8px] font-bold text-orange-600 leading-none" style={{ position: "relative", top: -4 }}>
+              <sup className="text-[8px] font-bold text-gray-400 leading-none" style={{ position: "relative", top: -4 }}>
                 +{plusDays}
               </sup>
             )}
@@ -710,14 +735,18 @@ function OptionCard({
                   {tfmt(seg.arrivalTime)}
                 </span>
                 {segPlusDays > 0 && (
-                  <sup className="text-[7px] font-bold text-orange-600" style={{ position: "relative", top: -3 }}>+{segPlusDays}</sup>
+                  <sup className="text-[7px] font-bold text-gray-400" style={{ position: "relative", top: -3 }}>+{segPlusDays}</sup>
                 )}
                 <span className="text-[8px] text-gray-500">
                   {seg.origin}–{seg.destination}
                 </span>
-                {seg.cabin && seg.cabin !== "Economy" && (
-                  <span className="text-[7px] font-bold tracking-wider px-[4px] py-[0.5px] rounded-[3px] bg-amber-50 text-amber-600 border border-amber-200">
-                    {seg.cabin === "PremiumEconomy" ? "PREM" : seg.cabin === "Business" ? "BIZ" : seg.cabin === "First" ? "FIRST" : String(seg.cabin).toUpperCase()}
+                {seg.cabin && (
+                  <span className={`text-[7px] font-bold tracking-wider px-[4px] py-[0.5px] rounded-[3px] ${
+                    seg.cabin === "Economy"
+                      ? "bg-gray-100 text-gray-600 border border-gray-200"
+                      : "bg-amber-50 text-amber-600 border border-amber-200"
+                  }`}>
+                    {seg.cabin === "Economy" ? "ECON" : seg.cabin === "PremiumEconomy" ? "PREM" : seg.cabin === "Business" ? "BIZ" : seg.cabin === "First" ? "FIRST" : String(seg.cabin).toUpperCase()}
                   </span>
                 )}
                 <span className="text-[8px] text-gray-300 ml-auto">{seg.durationFormatted}</span>
@@ -744,8 +773,11 @@ function OptionCard({
             <div key={si} className={si > 0 ? "mt-[8px]" : ""}>
               {/* Segment header for multi-segment options */}
               {option.segments.length > 1 && (
-                <div className="text-[8px] text-gray-900 tracking-[1px] uppercase font-semibold mb-[6px]">
-                  Segment {si + 1} — {seg.origin} → {seg.destination}
+                <div className="flex items-center gap-2 mt-[6px] mb-[6px]">
+                  <span style={{ fontSize: 8, fontWeight: 700, color: "#9aa0a6", letterSpacing: "1.5px", textTransform: "uppercase" as const, whiteSpace: "nowrap" as const }}>
+                    Segment {si + 1} — {seg.origin} → {seg.destination}
+                  </span>
+                  <div className="flex-1" style={{ height: 1, background: "#e0e0e0" }} />
                 </div>
               )}
 
@@ -776,7 +808,7 @@ function OptionCard({
                             <div className="text-[9px] text-gray-700 font-semibold">
                               {leg.originCity ? `${leg.originCity} (${leg.origin})` : leg.origin}
                             </div>
-                            <div className="text-[8px] text-gray-500 mt-[3px]">
+                            <div className="text-[9px] text-gray-600 font-medium mt-[3px]">
                               Travel time: {Math.floor(leg.durationMinutes / 60)}h {leg.durationMinutes % 60}m
                             </div>
                           </div>
@@ -796,7 +828,7 @@ function OptionCard({
                                 {tfmt(leg.arrivalTime)}
                               </span>
                               {legPlusDays > 0 && (
-                                <sup className="text-[8px] font-bold text-orange-600">+{legPlusDays}</sup>
+                                <sup className="text-[8px] font-bold text-gray-400">+{legPlusDays}</sup>
                               )}
                               <span className="text-[9px] text-gray-900">{dfmt(leg.arrivalTime)}</span>
                             </div>
@@ -874,8 +906,9 @@ function OptionCard({
       )}
 
       {/* ── Fare rows (expanded on click or when any checked) ── */}
+      {showFares && <div style={{ borderTop: "1px solid #e0e0e0", margin: "0" }} />}
       {showFares && (
-        <div style={{ background: "#f8f9fa", borderTop: "1px solid #c5c5c5" }}>
+        <div style={{ background: "#f8f9fa" }}>
           <CarrierFareTabs
             option={option}
             selectedVariantIndices={selectedVariantIndices}
@@ -1534,28 +1567,38 @@ function buildScenariosFromState(
 
   scenarios.sort((a, b) => a.totalRaw - b.totalRaw);
 
-  // Auto-tag
+  // Auto-tag — only use comparative labels ("Best Value", "Most Flexible")
+  // when there are 3+ scenarios. With fewer, the superlatives imply curation
+  // that doesn't exist; instead, label with the routing/package description.
   const tagged = new Set<number>();
-  if (scenarios.length > 0) {
-    scenarios[0].tag = "Best Value";
-    scenarios[0].highlight = true;
-    tagged.add(0);
+  if (scenarios.length >= 3) {
+    if (scenarios.length > 0) {
+      scenarios[0].tag = "Best Value";
+      scenarios[0].highlight = true;
+      tagged.add(0);
+    }
+    const flexIdx = scenarios.findIndex((s, i) => s.allFlex && !tagged.has(i));
+    if (flexIdx > -1) {
+      scenarios[flexIdx].tag = "Most Flexible";
+      tagged.add(flexIdx);
+    }
+    const bizIdx = scenarios.findIndex(
+      (s, i) => !tagged.has(i) && /business|premiere|first|biz/i.test(s.shortLabel)
+    );
+    if (bizIdx > -1) {
+      scenarios[bizIdx].tag = "Premium";
+      tagged.add(bizIdx);
+    }
+    scenarios.forEach((s, i) => {
+      if (!s.tag) s.tag = i === scenarios.length - 1 ? "Premium Option" : `Option ${i + 1}`;
+    });
+  } else {
+    // ≤2 scenarios: use descriptive labels, not superlatives
+    scenarios.forEach((s, i) => {
+      s.tag = s.shortLabel || `Option ${i + 1}`;
+      if (i === 0) s.highlight = true;
+    });
   }
-  const flexIdx = scenarios.findIndex((s, i) => s.allFlex && !tagged.has(i));
-  if (flexIdx > -1) {
-    scenarios[flexIdx].tag = "Most Flexible";
-    tagged.add(flexIdx);
-  }
-  const bizIdx = scenarios.findIndex(
-    (s, i) => !tagged.has(i) && /business|premiere|first|biz/i.test(s.shortLabel)
-  );
-  if (bizIdx > -1) {
-    scenarios[bizIdx].tag = "Premium";
-    tagged.add(bizIdx);
-  }
-  scenarios.forEach((s, i) => {
-    if (!s.tag) s.tag = i === scenarios.length - 1 ? "Premium Option" : `Option ${i + 1}`;
-  });
 
   return scenarios;
 }
@@ -2198,12 +2241,15 @@ function buildPackageName(ticket: Scenario["tickets"][0]): string {
     return flights.length === 2 ? `${label} both ways` : label;
   }
 
-  // Different per direction — describe each with cabin parenthetical
+  // Different per direction — describe each. Only add cabin parenthetical
+  // when the brand name doesn't already contain the cabin word.
   const dirLabels = flights.length === 2 ? ["outbound", "return"] : flights.map((f) => f.route);
   return perFlight.map((pf, i) => {
     if (pf.brand) {
-      // If brand name already implies the cabin (e.g. "BUSINESS PROMO"), still add parenthetical
-      // for clarity since different legs have different cabins
+      // If brand name already contains the cabin word (e.g. "BUSINESS"), skip parenthetical
+      if (pf.brand.toLowerCase().includes(pf.cabin.toLowerCase())) {
+        return `${pf.brand} ${dirLabels[i]}`;
+      }
       return `${pf.brand} (${pf.cabin}) ${dirLabels[i]}`;
     }
     return `${pf.cabin} ${dirLabels[i]}`;
