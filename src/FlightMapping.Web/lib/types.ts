@@ -26,11 +26,22 @@ export interface SearchRequest {
 }
 
 export interface SegmentInput {
-  origin: string;
-  destination: string;
-  departureDate: string; // YYYY-MM-DD
+  origins: string[];      // multi-airport: e.g. ["JFK","EWR"]
+  destinations: string[]; // multi-airport: e.g. ["LHR","CDG"]
+  departureDate: string;  // YYYY-MM-DD
   cabinOverride?: CabinClass;
   timePreference?: DepartureTimeWindow;
+}
+
+/** Normalize old single-airport format to array format */
+export function normalizeSegment(seg: Partial<SegmentInput> & { origin?: string; destination?: string }): SegmentInput {
+  return {
+    origins: seg.origins ?? (seg.origin ? [seg.origin] : []),
+    destinations: seg.destinations ?? (seg.destination ? [seg.destination] : []),
+    departureDate: seg.departureDate ?? "",
+    cabinOverride: seg.cabinOverride,
+    timePreference: seg.timePreference,
+  };
 }
 
 export interface PassengerConfig {

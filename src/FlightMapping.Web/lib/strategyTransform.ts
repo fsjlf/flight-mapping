@@ -272,7 +272,7 @@ function buildCoverageLabel(
   return coveredIndices
     .map((i) => {
       const seg = searchSegments[i];
-      return seg ? `${seg.origin} → ${seg.destination}` : "";
+      return seg ? `${seg.origins[0]} → ${seg.destinations[0]}` : "";
     })
     .filter(Boolean)
     .join(" → ");
@@ -361,10 +361,10 @@ export function transformToStrategyModel(
   let stratNum = 1;
 
   const totalLegs = searchSegments.length;
-  const routeParts = searchSegments.map((s) => s.origin);
+  const routeParts = searchSegments.map((s) => s.origins[0] || "");
   // Add final destination
   if (searchSegments.length > 0) {
-    routeParts.push(searchSegments[searchSegments.length - 1].destination);
+    routeParts.push(searchSegments[searchSegments.length - 1].destinations[0] || "");
   }
   const routeSummary = routeParts.join(" · ");
 
@@ -401,8 +401,8 @@ export function transformToStrategyModel(
   if (grouped.singleTickets.length > 0) {
     const options = groupIntoOptions(grouped.singleTickets);
     const fullCoverage = searchSegments
-      .map((s) => s.origin)
-      .concat(searchSegments[searchSegments.length - 1]?.destination || "")
+      .map((s) => s.origins[0] || "")
+      .concat(searchSegments[searchSegments.length - 1]?.destinations[0] || "")
       .filter(Boolean)
       .join(" → ");
 
@@ -482,7 +482,7 @@ export function transformToStrategyModel(
         slots.push({
           id: `ow_${legIdx}`,
           label: `TICKET ${i + 2}`,
-          coverage: seg ? `${seg.origin} → ${seg.destination}` : `Leg ${legIdx + 1}`,
+          coverage: seg ? `${seg.origins[0]} → ${seg.destinations[0]}` : `Leg ${legIdx + 1}`,
           note: `One-way · ${seg?.departureDate || ""}`,
           coveredLegIndices: [legIdx],
           options: owOptions,
@@ -527,7 +527,7 @@ export function transformToStrategyModel(
       return {
         id: `leg_${i}`,
         label: `TICKET ${i + 1}`,
-        coverage: `${seg.origin} → ${seg.destination}`,
+        coverage: `${seg.origins[0]} → ${seg.destinations[0]}`,
         note: `One-way · ${seg.departureDate}`,
         coveredLegIndices: [i],
         options,

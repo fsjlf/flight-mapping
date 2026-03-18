@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { CabinClass, DepartureTimeWindow, SegmentInput } from "@/lib/types";
+import AirportChipInput from "./AirportChipInput";
 
 interface Props {
   segment: SegmentInput;
@@ -38,25 +39,17 @@ export default function SegmentRow({
     <div className="space-y-1">
       <div className="flex items-center gap-3">
         <span className="text-sm text-gray-400 w-4">{index + 1}</span>
-        <input
-          type="text"
+        <AirportChipInput
+          codes={segment.origins}
+          onChange={(codes) => onChange(index, { origins: codes })}
           placeholder="From (e.g. JFK)"
-          value={segment.origin}
-          onChange={(e) => onChange(index, { origin: e.target.value.toUpperCase() })}
-          maxLength={3}
-          className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
         />
         <span className="text-gray-400">&rarr;</span>
-        <input
-          type="text"
+        <AirportChipInput
+          codes={segment.destinations}
+          onChange={(codes) => onChange(index, { destinations: codes })}
           placeholder="To (e.g. LHR)"
-          value={segment.destination}
-          onChange={(e) =>
-            onChange(index, { destination: e.target.value.toUpperCase() })
-          }
-          maxLength={3}
           autoFocus={autoFocusDestination}
-          className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
         />
         <input
           type="date"

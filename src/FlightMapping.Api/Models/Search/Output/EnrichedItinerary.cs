@@ -22,6 +22,9 @@ public class EnrichedItinerary
     public string? GoverningCarriers { get; set; }
     public string PricingSource { get; set; } = string.Empty;
     public List<int> CoveredSegmentIndices { get; set; } = new();
+
+    /// <summary>For multi-airport searches: which route variant produced this result (e.g. "JFK→LHR / LHR→JFK")</summary>
+    public string? RouteKey { get; set; }
 }
 
 public class FarePolicy

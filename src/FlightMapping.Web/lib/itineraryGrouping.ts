@@ -60,8 +60,8 @@ export function groupItineraries(
       if (!seg) continue;
       const idx = searchSegments.findIndex(
         (s) =>
-          s.origin.toUpperCase() === seg.origin.toUpperCase() &&
-          s.destination.toUpperCase() === seg.destination.toUpperCase()
+          (s.origins[0] || "").toUpperCase() === seg.origin.toUpperCase() &&
+          (s.destinations[0] || "").toUpperCase() === seg.destination.toUpperCase()
       );
       if (idx >= 0) separateByLeg[idx].push(itin);
     }
@@ -74,7 +74,7 @@ export function groupItineraries(
     const key = sorted.join(",");
     if (!linkedMap.has(key)) {
       const label = sorted
-        .map((i) => `${searchSegments[i]?.origin}\u2192${searchSegments[i]?.destination}`)
+        .map((i) => `${searchSegments[i]?.origins[0] || ""}\u2192${searchSegments[i]?.destinations[0] || ""}`)
         .join(" + ");
       linkedMap.set(key, { coveredLegIndices: sorted, label, itineraries: [] });
     }
@@ -118,7 +118,7 @@ export function groupItineraries(
     );
     if (allUncoveredHaveOptions) {
       const owLegs = uncovered.map((i) => ({
-        label: `${searchSegments[i].origin}\u2192${searchSegments[i].destination}`,
+        label: `${searchSegments[i].origins[0] || ""}\u2192${searchSegments[i].destinations[0] || ""}`,
         pricePerAdult: separateByLeg[i][0].pricing.pricePerAdult,
       }));
       const uncoveredPrice = owLegs.reduce((sum, l) => sum + l.pricePerAdult, 0);

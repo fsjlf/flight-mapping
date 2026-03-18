@@ -10,6 +10,7 @@ using FlightMapping.Api.Models.SplitPnr;
 
 public class SearchOrchestrator : ISearchOrchestrator
 {
+    private readonly IRouteExpander _routeExpander;
     private readonly ITripClassifier _tripClassifier;
     private readonly IStrategyGenerator _strategyGenerator;
     private readonly IBfmRequestBuilder _requestBuilder;
@@ -20,6 +21,7 @@ public class SearchOrchestrator : ISearchOrchestrator
     private readonly ILogger<SearchOrchestrator> _logger;
 
     public SearchOrchestrator(
+        IRouteExpander routeExpander,
         ITripClassifier tripClassifier,
         IStrategyGenerator strategyGenerator,
         IBfmRequestBuilder requestBuilder,
@@ -29,6 +31,7 @@ public class SearchOrchestrator : ISearchOrchestrator
         IItineraryScorer scorer,
         ILogger<SearchOrchestrator> logger)
     {
+        _routeExpander = routeExpander;
         _tripClassifier = tripClassifier;
         _strategyGenerator = strategyGenerator;
         _requestBuilder = requestBuilder;
@@ -47,49 +50,77 @@ public class SearchOrchestrator : ISearchOrchestrator
 
         _logger.LogInformation("Starting search {SearchId} with {SegmentCount} segments", searchId, request.Segments.Count);
 
-        // 1. Classify trip
-        var classification = _tripClassifier.Classify(request.Segments);
+        // 1. Expand multi-airport segments into concrete single-airport route variants
+        var routeVariants = _routeExpander.Expand(request);
+        var isMultiAirport = routeVariants.Count > 1;
+
+        if (isMultiAirport)
+            _logger.LogInformation("Multi-airport search: {VariantCount} route variants", routeVariants.Count);
+
+        // Use first variant for classification (used in response + split PNR probing)
+        var primaryRequest = routeVariants[0].Request;
+        var classification = _tripClassifier.Classify(primaryRequest.Segments);
         _logger.LogInformation("Trip classified as {TripType} with {StrategyCount} strategies",
             classification.Type, classification.RecommendedStrategies.Count);
 
-        // 2. Generate execution plan
-        var plan = _strategyGenerator.GeneratePlan(request, classification);
-        _logger.LogInformation("Execution plan: {CallCount} API calls in {WaveCount} waves",
-            plan.TotalApiCalls, plan.ExecutionWaves);
-
-        // 2b. If multi-pax, fire a 1-pax probe search in parallel for split PNR detection.
-        // This adds no latency since it runs concurrently with the main search waves.
-        Task<List<EnrichedItinerary>>? splitProbeTask = null;
-        if (totalSeated >= 2)
-        {
-            splitProbeTask = RunSplitPnrProbeAsync(request, classification, cancellationToken);
-        }
-
-        // 3. Execute strategies in waves
+        // 2. Execute all route variants in parallel
         var allItineraries = new List<EnrichedItinerary>();
         var strategyResults = new List<StrategyResult>();
         var sabreMessages = new List<string>();
 
-        var allCalls = plan.Strategies
-            .SelectMany(s => s.ApiCalls.Select(c => (Strategy: s, Call: c)))
-            .ToList();
-
-        var waves = allCalls.GroupBy(x => x.Call.Wave).OrderBy(g => g.Key);
-
-        foreach (var wave in waves)
+        // 2b. If multi-pax and not too many variants, fire split PNR probe in parallel
+        Task<List<EnrichedItinerary>>? splitProbeTask = null;
+        if (totalSeated >= 2 && routeVariants.Count <= 4)
         {
-            _logger.LogInformation("Executing wave {WaveNumber} with {CallCount} parallel calls",
-                wave.Key, wave.Count());
+            splitProbeTask = RunSplitPnrProbeAsync(primaryRequest, classification, cancellationToken);
+        }
 
-            var tasks = wave.Select(x => ExecuteApiCall(x.Strategy, x.Call, request, cancellationToken));
-            var results = await Task.WhenAll(tasks);
+        // Execute each variant through the full pipeline
+        var variantTasks = routeVariants.Select(async variant =>
+        {
+            var variantClassification = isMultiAirport
+                ? _tripClassifier.Classify(variant.Request.Segments)
+                : classification;
+            var plan = _strategyGenerator.GeneratePlan(variant.Request, variantClassification);
 
-            foreach (var (itineraries, stratResult, messages) in results)
+            var variantItins = new List<EnrichedItinerary>();
+            var variantResults = new List<StrategyResult>();
+            var variantMessages = new List<string>();
+
+            var allCalls = plan.Strategies
+                .SelectMany(s => s.ApiCalls.Select(c => (Strategy: s, Call: c)))
+                .ToList();
+
+            var waves = allCalls.GroupBy(x => x.Call.Wave).OrderBy(g => g.Key);
+
+            foreach (var wave in waves)
             {
-                allItineraries.AddRange(itineraries);
-                strategyResults.Add(stratResult);
-                sabreMessages.AddRange(messages);
+                var tasks = wave.Select(x => ExecuteApiCall(x.Strategy, x.Call, variant.Request, cancellationToken));
+                var results = await Task.WhenAll(tasks);
+
+                foreach (var (itineraries, stratResult, messages) in results)
+                {
+                    // Tag each itinerary with its route variant
+                    if (isMultiAirport)
+                    {
+                        foreach (var itin in itineraries)
+                            itin.RouteKey = variant.RouteLabel;
+                    }
+                    variantItins.AddRange(itineraries);
+                    variantResults.Add(stratResult);
+                    variantMessages.AddRange(messages);
+                }
             }
+
+            return (variantItins, variantResults, variantMessages);
+        });
+
+        var variantResults2 = await Task.WhenAll(variantTasks);
+        foreach (var (itins, results, messages) in variantResults2)
+        {
+            allItineraries.AddRange(itins);
+            strategyResults.AddRange(results);
+            sabreMessages.AddRange(messages);
         }
 
         _logger.LogInformation("Collected {Count} raw itineraries across all strategies", allItineraries.Count);
@@ -197,11 +228,12 @@ public class SearchOrchestrator : ISearchOrchestrator
             Classification = classification,
             Itineraries = ranked,
             SplitPnrOpportunities = splitOpportunities,
+            RouteVariants = isMultiAirport ? routeVariants.Select(v => v.RouteLabel).ToList() : null,
             Metadata = new SearchMetadata
             {
                 TotalResults = ranked.Count,
-                StrategiesExecuted = plan.Strategies.Count,
-                ApiCallsMade = plan.TotalApiCalls,
+                StrategiesExecuted = strategyResults.Count,
+                ApiCallsMade = strategyResults.Count(r => r.Success),
                 SearchDurationMs = stopwatch.ElapsedMilliseconds,
                 StrategyResults = strategyResults,
                 SabreMessages = sabreMessages.Distinct().ToList(),

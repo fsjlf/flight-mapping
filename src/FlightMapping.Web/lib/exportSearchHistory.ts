@@ -128,7 +128,7 @@ export function buildHistoryEntry(
       mixAndMatch: request.segments
         .map((seg, i) => ({
           leg: i,
-          route: `${seg.origin}→${seg.destination}`,
+          route: `${seg.origins[0] || ""}→${seg.destinations[0] || ""}`,
           date: seg.departureDate,
           options: slimAndCap(grouped.separateByLeg[i] || []),
         }))

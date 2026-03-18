@@ -60,8 +60,8 @@ export function parseNaturalLanguage(input: string): ParseResult {
     if (!dest) warnings.push(`Could not resolve airport: "${seg.destination}"`);
     if (origin && dest && seg.date) {
       const resolved: SegmentInput = {
-        origin,
-        destination: dest,
+        origins: [origin],
+        destinations: [dest],
         departureDate: seg.date,
       };
       if (seg.cabin) resolved.cabinOverride = seg.cabin;

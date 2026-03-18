@@ -40,8 +40,8 @@ for (let i = 0; i < samples.length; i++) {
   const { carriers, maxStops, priority, notes } = result.parsed;
 
   const hasSegments = segs.length > 0;
-  const hasOrigin = segs.length > 0 && segs[0].origin?.length === 3;
-  const hasDest = segs.length > 0 && segs[0].destination?.length === 3;
+  const hasOrigin = segs.length > 0 && segs[0].origins?.[0]?.length === 3;
+  const hasDest = segs.length > 0 && segs[0].destinations?.[0]?.length === 3;
   const hasDate = segs.length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(segs[0].departureDate);
 
   const ok = hasSegments && hasOrigin && hasDest && hasDate;
@@ -51,7 +51,7 @@ for (let i = 0; i < samples.length; i++) {
   console.log(`\n${ok ? "✅" : "❌"} Sample ${i + 1}: ${samples[i].substring(0, 70)}...`);
   console.log(`   Segments: ${segs.length}`);
   for (const s of segs) {
-    console.log(`     ${s.origin} → ${s.destination} on ${s.departureDate}${s.cabinOverride ? ` [${s.cabinOverride}]` : ""}${s.timePreference ? ` (${s.timePreference})` : ""}`);
+    console.log(`     ${s.origins.join(",")} → ${s.destinations.join(",")} on ${s.departureDate}${s.cabinOverride ? ` [${s.cabinOverride}]` : ""}${s.timePreference ? ` (${s.timePreference})` : ""}`);
   }
   console.log(`   Passengers: ${pax?.adults}A ${pax?.children}C ${pax?.infants}I`);
   if (prefs?.cabin) console.log(`   Default cabin: ${prefs.cabin}`);

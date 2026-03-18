@@ -1786,7 +1786,7 @@ function htmlHeader(model: StrategyModel, eyebrow: string = "Curated For You"): 
 }
 
 function htmlEmailBody(introduction?: string, bodyNote: string = ""): string {
-  const introText = introduction || "<!--PLACEHOLDER:INTRO-->Loading advisor notes&hellip;";
+  const introText = introduction || "<!--PLACEHOLDER:INTRO-->Loading introduction&hellip;";
   const introStyle = introduction ? "color:#555555;" : "color:#999999;font-style:italic;";
   return `<tr><td style="padding:38px 48px 0 48px;">
 <p style="margin:0 0 18px 0;${F}font-size:15px;color:#2c2c2c;line-height:1.7;">Hi,</p>
@@ -2295,7 +2295,7 @@ ${label}${highlight ? " &#9733;" : ""} &nbsp;&middot;&nbsp; ${totalPrice} per pe
 </table></td></tr>
 ${rationale
     ? `<tr><td style="padding:0 48px 14px 48px;"><p style="margin:0;${F}font-size:13px;color:#555555;line-height:1.7;font-style:italic;">${rationale}</p></td></tr>`
-    : `<tr><td style="padding:0 48px 14px 48px;"><p style="margin:0;${F}font-size:13px;color:#999999;line-height:1.7;font-style:italic;"><!--PLACEHOLDER:RATIONALE_${id}-->Loading advisor notes&hellip;</p></td></tr>`}`;
+    : `<tr><td style="padding:0 48px 14px 48px;"><p style="margin:0;${F}font-size:13px;color:#999999;line-height:1.7;font-style:italic;"><!--PLACEHOLDER:RATIONALE_${id}-->Loading&hellip;</p></td></tr>`}`;
 }
 
 function htmlLegHeader(eyebrow: string, route: string, date: string, optionCount: number): string {
@@ -2479,9 +2479,6 @@ function renderRoundtrip(scenarios: Scenario[], model: StrategyModel, copy: Prop
     htmlTripDetailsBar(model),
     sections,
     htmlComparisonTable(scenarios),
-    htmlWatchOuts(copy.watchOuts || []),
-    htmlRecommendation(copy.recommendation || ""),
-    htmlAdvisorNotes(copy.advisorNotes || ""),
     htmlBookingTerms(),
     htmlFooter(),
   ].join(""));
@@ -3267,9 +3264,6 @@ function renderOneWay(scenarios: Scenario[], model: StrategyModel, copy: Proposa
       htmlDiamond(),
       htmlTripDetailsBar(model),
       sections,
-      htmlWatchOuts(copy.watchOuts || []),
-      htmlRecommendation(copy.recommendation || ""),
-      htmlAdvisorNotes(copy.advisorNotes || ""),
       htmlBookingTerms(),
       htmlFooter(),
     ].join(""));
@@ -3346,9 +3340,6 @@ function renderOneWay(scenarios: Scenario[], model: StrategyModel, copy: Proposa
     htmlDiamond(),
     htmlTripDetailsBar(model),
     sections,
-    htmlWatchOuts(copy.watchOuts || []),
-    htmlRecommendation(copy.recommendation || ""),
-    htmlAdvisorNotes(copy.advisorNotes || ""),
     htmlBookingTerms(),
     htmlFooter(),
   ].join(""));
@@ -4001,9 +3992,6 @@ function renderMultiStrategyFixed(scenarios: Scenario[], model: StrategyModel, c
     htmlDiamond(),
     htmlTripDetailsBar(model),
     sections,
-    htmlWatchOuts(copy.watchOuts || []),
-    htmlRecommendation(copy.recommendation || ""),
-    htmlAdvisorNotes(copy.advisorNotes || ""),
     htmlBookingTerms(),
     htmlFooter(),
   ].join(""));
@@ -4129,9 +4117,6 @@ function renderMultiStrategyFlex(scenarios: Scenario[], model: StrategyModel, co
     htmlDiamond(),
     htmlTripDetailsBar(model),
     sections,
-    htmlWatchOuts(copy.watchOuts || []),
-    htmlRecommendation(copy.recommendation || ""),
-    htmlAdvisorNotes(copy.advisorNotes || ""),
     htmlBookingTerms(),
     htmlFooter(),
   ].join(""));
@@ -4188,7 +4173,7 @@ function patchCopyIntoHTML(
   // Patch introduction
   if (copy.introduction) {
     out = out.replace(
-      /<!--PLACEHOLDER:INTRO-->Loading advisor notes&hellip;/,
+      /<!--PLACEHOLDER:INTRO-->Loading introduction&hellip;/,
       copy.introduction
     );
     // Also fix the style from italic/muted to normal
@@ -4201,7 +4186,7 @@ function patchCopyIntoHTML(
   // Patch scenario rationales
   (copy.scenarios || []).forEach(({ id, rationale }) => {
     out = out.replace(
-      `<!--PLACEHOLDER:RATIONALE_${id}-->Loading advisor notes&hellip;`,
+      `<!--PLACEHOLDER:RATIONALE_${id}-->Loading&hellip;`,
       rationale
     );
     // Fix style for this rationale
@@ -4210,41 +4195,6 @@ function patchCopyIntoHTML(
       `color:#555555;line-height:1.7;font-style:italic;">${rationale}`
     );
   });
-
-  // Patch recommendation
-  if (copy.recommendation) {
-    out = out.replace(
-      /<!--PLACEHOLDER:RECOMMENDATION-->Loading recommendation&hellip;/,
-      copy.recommendation
-    );
-    out = out.replace(
-      "color:#999999;font-style:italic;line-height:1.85;\">",
-      "color:#555555;line-height:1.85;\">"
-    );
-  }
-
-  // Patch watch-outs (inject before recommendation if not already present)
-  if ((copy.watchOuts || []).length && !out.includes("Important Considerations")) {
-    const warnHTML = `<tr><td style="padding:0 48px 20px 48px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fff9f0;border:1px solid #e8dcc8;">
-<tr><td style="padding:16px 20px;">
-<p style="margin:0 0 8px 0;${F}font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#b45309;font-weight:bold;">&#9888; Important Considerations</p>
-${copy.watchOuts!.map(w => `<p style="margin:0 0 4px 0;${F}font-size:12px;color:#555555;line-height:1.7;padding-left:12px;border-left:2px solid #e8dcc8;">${w}</p>`).join("")}
-</td></tr></table></td></tr>`;
-    out = out.replace("Recommendation</p></td></tr>", `Recommendation</p></td></tr>\n${warnHTML}`);
-  }
-
-  // Patch advisor notes
-  if (copy.advisorNotes && !out.includes("Advisor Notes")) {
-    out = out.replace(
-      "Booking Terms</p></td></tr>",
-      `Advisor Notes</p></td></tr>
-<tr><td style="padding:0 48px 20px 48px;">
-<p style="margin:0;${F}font-size:13px;color:#555555;line-height:1.85;">${copy.advisorNotes}</p></td></tr>
-<tr><td style="padding:8px 48px 6px 48px;">
-<p style="margin:0 0 8px 0;${F}font-size:10px;letter-spacing:2.5px;text-transform:uppercase;color:#8b7355;font-weight:bold;">Booking Terms</p></td></tr>`
-    );
-  }
 
   return out;
 }

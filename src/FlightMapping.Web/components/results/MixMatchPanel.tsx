@@ -135,12 +135,12 @@ export default function MixMatchPanel({ legs, searchSegments, linkedLegGroups = 
                       .map((seg, idx) => ({ seg, idx }))
                       .filter(({ seg, idx }) =>
                         !group.coveredLegIndices.includes(idx) &&
-                        seg.origin.trim() !== "" &&
-                        seg.destination.trim() !== ""
+                        (seg.origins[0] || "").trim() !== "" &&
+                        (seg.destinations[0] || "").trim() !== ""
                       )
                       .map(({ seg }) => ({
-                        origin: seg.origin,
-                        destination: seg.destination,
+                        origin: seg.origins[0] || "",
+                        destination: seg.destinations[0] || "",
                         date: seg.departureDate,
                       }));
                     return (
@@ -175,7 +175,7 @@ export default function MixMatchPanel({ legs, searchSegments, linkedLegGroups = 
               {/* Column header */}
               <div className="mb-3">
                 <div className="text-sm font-semibold text-gray-900">
-                  {legLabel(i)}: {searchSegments[i]?.origin} → {searchSegments[i]?.destination}
+                  {legLabel(i)}: {searchSegments[i]?.origins[0] || ""} → {searchSegments[i]?.destinations[0] || ""}
                 </div>
                 <div className="text-xs text-gray-500">
                   {searchSegments[i]?.departureDate} · {groups.length} options

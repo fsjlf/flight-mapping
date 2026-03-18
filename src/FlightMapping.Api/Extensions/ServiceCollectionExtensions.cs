@@ -31,6 +31,7 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddFlightSearch(this IServiceCollection services)
     {
+        services.AddSingleton<IRouteExpander, RouteExpander>();
         services.AddSingleton<ITripClassifier, TripClassifier>();
         services.AddSingleton<IStrategyGenerator, StrategyGenerator>();
         services.AddSingleton<IBfmRequestBuilder, BfmRequestBuilder>();

@@ -10,4 +10,7 @@ public class SearchResponse
     public List<EnrichedItinerary> Itineraries { get; set; } = new();
     public SearchMetadata Metadata { get; set; } = new();
     public List<SplitPnrDetection>? SplitPnrOpportunities { get; set; }
+
+    /// <summary>For multi-airport searches: all route variant labels that were searched</summary>
+    public List<string>? RouteVariants { get; set; }
 }

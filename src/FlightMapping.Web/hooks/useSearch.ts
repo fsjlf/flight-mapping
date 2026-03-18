@@ -7,13 +7,14 @@ import {
   PassengerConfig,
   SearchPreferences,
   SearchHistoryEntry,
+  normalizeSegment,
 } from "@/lib/types";
 import { searchFlights } from "@/lib/api";
 import { buildHistoryEntry } from "@/lib/exportSearchHistory";
 
 const defaultSegment: SegmentInput = {
-  origin: "",
-  destination: "",
+  origins: [],
+  destinations: [],
   departureDate: "",
 };
 
@@ -40,7 +41,7 @@ export function useSearch() {
         ...prev,
         {
           ...defaultSegment,
-          origin: last?.destination || "",
+          origins: last?.destinations?.length ? [...last.destinations] : [],
           departureDate: last?.departureDate || "",
         },
       ];
@@ -66,14 +67,17 @@ export function useSearch() {
   }, []);
 
   const applyParsed = useCallback((req: Partial<SearchRequest>) => {
-    if (req.segments?.length) setSegments(req.segments);
+    if (req.segments?.length) {
+      // Normalize old "origin"/"destination" format from NLP parser
+      setSegments(req.segments.map((s) => normalizeSegment(s as any)));
+    }
     if (req.passengers) setPassengers(req.passengers);
     if (req.preferences) setPreferences(req.preferences);
   }, []);
 
   const search = useCallback(async () => {
     const validSegments = segments.filter(
-      (s) => s.origin && s.destination && s.departureDate
+      (s) => s.origins.length > 0 && s.destinations.length > 0 && s.departureDate
     );
     if (validSegments.length === 0) {
       setError("Add at least one segment with origin, destination, and date");
@@ -110,7 +114,7 @@ export function useSearch() {
     }
   }, [segments, passengers, preferences]);
 
-  const isValid = segments.some((s) => s.origin && s.destination && s.departureDate);
+  const isValid = segments.some((s) => s.origins.length > 0 && s.destinations.length > 0 && s.departureDate);
 
   return {
     segments,
