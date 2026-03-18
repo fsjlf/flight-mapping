@@ -10,6 +10,10 @@ import {
   SplitPnrAnalysis,
 } from "@/lib/types";
 import SplitPnrPanel from "../split-pnr/SplitPnrPanel";
+import StrategyFilterPanel from "./strategy-filters/StrategyFilterPanel";
+import HiddenSelectionWarning from "./strategy-filters/HiddenSelectionWarning";
+import { createDefaultFilter, type StrategyFilterState, type SlotFilterMap } from "@/lib/strategyFilterTypes";
+import { applyStrategyFilters } from "@/lib/strategyFilterLogic";
 import {
   transformToStrategyModel,
   buildSystemPrompt,
@@ -583,6 +587,19 @@ function OptionCard({
                 +{plusDays}
               </sup>
             )}
+            {/* Route badge for multi-airport: show origin–dest airports */}
+            {(() => {
+              const firstSeg2 = option.segments[0];
+              const lastSeg2 = option.segments[option.segments.length - 1];
+              const routeStr = option.segments.length > 1
+                ? `${firstSeg2?.origin}–${lastSeg2?.destination}`
+                : `${firstSeg2?.origin}–${firstSeg2?.destination}`;
+              return (
+                <span className="text-[8px] font-bold text-cyan-400/80 bg-cyan-400/10 border border-cyan-400/15 px-[4px] py-[0.5px] rounded-[3px] ml-[2px]">
+                  {routeStr}
+                </span>
+              );
+            })()}
           </div>
           <div className="flex items-center gap-[5px] mt-[2px]">
             <span className="text-[9px] text-slate-500 font-medium">
@@ -4311,6 +4328,18 @@ export default function ComparisonBuilder({
     return init;
   });
 
+  // Per-slot filter state
+  const [slotFilters, setSlotFilters] = useState<SlotFilterMap>(() => {
+    const init: SlotFilterMap = {};
+    model.strategies.forEach((s) => {
+      init[s.id] = {};
+      s.slots.forEach((sl) => {
+        init[s.id][sl.id] = createDefaultFilter();
+      });
+    });
+    return init;
+  });
+
   // Selection state: sels[strategyId][slotId] = Set of "optionId:variantIndex"
   const [sels, setSels] = useState<SelectionState>(() => {
     const init: SelectionState = {};
@@ -4511,31 +4540,36 @@ What are your client's priorities?`;
   // ── Filter & Sort State ──
   type SortMode = "best" | "cheapest" | "fastest";
   const [sortMode, setSortMode] = useState<SortMode>("best");
-  const [filterStops, setFilterStops] = useState<"any" | "0" | "1">("any");
-  const [filterRefundable, setFilterRefundable] = useState<"any" | "yes" | "no">("any");
-  const [filterAirlines, setFilterAirlines] = useState<Set<string>>(new Set());
 
-  // Available airlines in current slot
-  const availableAirlines = useMemo(() => {
-    const set = new Map<string, string>();
-    activeSlotOptions.forEach((o) => set.set(o.carrier, o.carrierName));
-    return set;
-  }, [activeSlotOptions]);
+  // Current slot's filter state (from per-slot map)
+  const currentFilters = slotFilters[strategy.id]?.[activeSlot] ?? createDefaultFilter();
+
+  const updateFilters = useCallback(
+    (update: Partial<StrategyFilterState>) => {
+      setSlotFilters((prev) => ({
+        ...prev,
+        [strategy.id]: {
+          ...prev[strategy.id],
+          [activeSlot]: { ...(prev[strategy.id]?.[activeSlot] ?? createDefaultFilter()), ...update },
+        },
+      }));
+    },
+    [strategy.id, activeSlot]
+  );
+
+  const clearFilters = useCallback(() => {
+    setSlotFilters((prev) => ({
+      ...prev,
+      [strategy.id]: {
+        ...prev[strategy.id],
+        [activeSlot]: createDefaultFilter(),
+      },
+    }));
+  }, [strategy.id, activeSlot]);
 
   // Filtered + sorted options
   const displayOptions = useMemo(() => {
-    let opts = [...activeSlotOptions];
-
-    // Filter: stops
-    if (filterStops === "0") opts = opts.filter((o) => o.stops === 0);
-    else if (filterStops === "1") opts = opts.filter((o) => o.stops <= 1);
-
-    // Filter: refundable
-    if (filterRefundable === "yes") opts = opts.filter((o) => o.variants.some((v) => v.refundable));
-    else if (filterRefundable === "no") opts = opts.filter((o) => o.variants.some((v) => !v.refundable));
-
-    // Filter: airlines
-    if (filterAirlines.size > 0) opts = opts.filter((o) => filterAirlines.has(o.carrier));
+    let opts = applyStrategyFilters(activeSlotOptions, currentFilters);
 
     // Sort
     if (sortMode === "cheapest") {
@@ -4548,7 +4582,24 @@ What are your client's priorities?`;
     }
 
     return opts;
-  }, [activeSlotOptions, sortMode, filterStops, filterRefundable, filterAirlines]);
+  }, [activeSlotOptions, sortMode, currentFilters]);
+
+  // Hidden selection detection
+  const hiddenSelectionCount = useMemo(() => {
+    const selectedKeys = sels[strategy.id]?.[activeSlot] || new Set<string>();
+    if (selectedKeys.size === 0) return 0;
+    const displayedIds = new Set(displayOptions.map((o) => o.id));
+    let count = 0;
+    const countedOpts = new Set<string>();
+    selectedKeys.forEach((key) => {
+      const optId = key.split(":")[0];
+      if (!displayedIds.has(optId) && !countedOpts.has(optId)) {
+        countedOpts.add(optId);
+        count++;
+      }
+    });
+    return count;
+  }, [sels, strategy.id, activeSlot, displayOptions]);
 
   // Cheapest min price across all (unfiltered) options in the slot
   const slotCheapestPrice = useMemo(() => {
@@ -4989,12 +5040,11 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
             )}
           </div>
 
-          {/* Filter & Sort bar */}
+          {/* Sort bar */}
           <div
-            className="shrink-0 flex items-center gap-[6px] flex-wrap"
-            style={{ padding: "6px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", background: "rgba(0,0,0,0.08)" }}
+            className="shrink-0 flex items-center gap-[6px]"
+            style={{ padding: "5px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", background: "rgba(0,0,0,0.06)" }}
           >
-            {/* Sort */}
             <div className="flex items-center rounded-[5px] overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
               {(["best", "cheapest", "fastest"] as const).map((m) => (
                 <button
@@ -5011,74 +5061,22 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
                 </button>
               ))}
             </div>
-
-            <span className="text-slate-800">|</span>
-
-            {/* Stops filter */}
-            <select
-              value={filterStops}
-              onChange={(e) => setFilterStops(e.target.value as "any" | "0" | "1")}
-              className="bg-transparent border border-white/8 rounded-[4px] text-[8px] text-slate-400 px-[5px] py-[3px] cursor-pointer"
-              style={{ outline: "none" }}
-            >
-              <option value="any">Any stops</option>
-              <option value="0">Nonstop</option>
-              <option value="1">≤ 1 stop</option>
-            </select>
-
-            {/* Refundable filter */}
-            <select
-              value={filterRefundable}
-              onChange={(e) => setFilterRefundable(e.target.value as "any" | "yes" | "no")}
-              className="bg-transparent border border-white/8 rounded-[4px] text-[8px] text-slate-400 px-[5px] py-[3px] cursor-pointer"
-              style={{ outline: "none" }}
-            >
-              <option value="any">All fares</option>
-              <option value="yes">Refundable</option>
-              <option value="no">Non-refundable</option>
-            </select>
-
-            {/* Airline filter — only show if >1 airline */}
-            {availableAirlines.size > 1 && (
-              <div className="flex items-center gap-[3px]">
-                {Array.from(availableAirlines).map(([code, name]) => {
-                  const active = filterAirlines.size === 0 || filterAirlines.has(code);
-                  return (
-                    <button
-                      key={code}
-                      onClick={() => {
-                        setFilterAirlines((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(code)) {
-                            next.delete(code);
-                          } else {
-                            next.add(code);
-                          }
-                          // If all selected or none, clear the filter
-                          if (next.size === availableAirlines.size) return new Set();
-                          return next;
-                        });
-                      }}
-                      className="flex items-center gap-[2px] rounded-[4px] border-none cursor-pointer"
-                      style={{
-                        padding: "2px 5px",
-                        background: active ? "rgba(255,255,255,0.06)" : "transparent",
-                        opacity: active ? 1 : 0.35,
-                      }}
-                      title={name}
-                    >
-                      <CarrierChip code={code} size={12} />
-                      <span className="text-[7px] text-slate-500">{code}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
             <span className="text-[8px] text-slate-700 ml-auto">
               {displayOptions.length}/{activeSlotOptions.length}
             </span>
           </div>
+
+          {/* Filter panel */}
+          <StrategyFilterPanel
+            options={activeSlotOptions}
+            filters={currentFilters}
+            onChange={updateFilters}
+            onClear={clearFilters}
+            strategyColor={strategy.color}
+          />
+
+          {/* Hidden selection warning */}
+          <HiddenSelectionWarning count={hiddenSelectionCount} onShow={clearFilters} />
 
           {/* Options list */}
           <div className="flex-1 overflow-y-auto p-[8px_11px_4px]">
