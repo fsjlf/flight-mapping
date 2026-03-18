@@ -274,10 +274,10 @@ function FareRow({
             <span className="text-[7px] text-sky-400/70">Free Changes</span>
           )}
           {fareTerms.changePolicy === "fee" && (
-            <span className="text-[7px] text-gray-9000">Changes for Fee</span>
+            <span className="text-[7px] text-gray-900">Changes for Fee</span>
           )}
           {fareTerms.baggage && (
-            <span className="text-[7px] text-gray-9000">{fareTerms.baggage}</span>
+            <span className="text-[7px] text-gray-900">{fareTerms.baggage}</span>
           )}
           {fareTerms.seatType && (
             <span className="text-[7px] text-purple-400/70">{fareTerms.seatType}</span>
@@ -461,7 +461,6 @@ function OptionCard({
   backendSplitDetection?: SplitPnrDetection | null;
 }) {
   const [faresOpen, setFaresOpen] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [showSplitPanel, setShowSplitPanel] = useState(false);
 
   // Use backend-provided split PNR detection (from 1-pax probing)
@@ -566,8 +565,9 @@ function OptionCard({
     <div
       className="rounded-lg mb-[6px] overflow-hidden transition-all duration-150"
       style={{
-        border: `1px solid ${anyChecked ? C.accent : "#f1f3f4"}`,
+        border: `1px solid ${anyChecked ? C.accent : "#c5c5c5"}`,
         background: anyChecked ? C.accentLight : "#ffffff",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
       }}
     >
       {/* ── Summary Row (always visible, scannable) ── */}
@@ -621,18 +621,18 @@ function OptionCard({
                 ? `${firstSeg2?.origin}–${lastSeg2?.destination}`
                 : `${firstSeg2?.origin}–${firstSeg2?.destination}`;
               return (
-                <span className="text-[8px] font-bold text-blue-600/80 bg-blue-50 border border-blue-200 px-[4px] py-[0.5px] rounded-[3px] ml-[2px]">
+                <span className="text-[8px] font-bold text-blue-700 bg-blue-50 border border-blue-300 px-[4px] py-[0.5px] rounded-[3px] ml-[2px]">
                   {routeStr}
                 </span>
               );
             })()}
           </div>
           <div className="flex items-center gap-[5px] mt-[2px]">
-            <span className="text-[9px] text-gray-9000 font-medium">
+            <span className="text-[9px] text-gray-900 font-medium">
               {option.carrierName}
             </span>
             {option.segments.map((seg, i) => (
-              <span key={i} className="text-[8px] font-mono text-gray-400">{seg.flightNumber}</span>
+              <span key={i} className="text-[8px] font-mono text-gray-500">{seg.flightNumber}</span>
             ))}
             {isAISuggested && (
               <span className="text-[7px] font-bold tracking-wider text-blue-600 bg-blue-50 border border-blue-200 px-[4px] py-[0.5px] rounded-[3px]">
@@ -734,37 +734,17 @@ function OptionCard({
         </div>
       )}
 
-      {/* ── Fare rows (expanded on click or when any checked) ── */}
-      {showFares && (
-        <CarrierFareTabs
-          option={option}
-          selectedVariantIndices={selectedVariantIndices}
-          onVariantToggle={onVariantToggle}
-          color={color}
-        />
-      )}
-
-      {/* ── Flight details toggle ── */}
+      {/* ── Flight details (always visible when expanded) ── */}
       {showFares && (
         <div
-          className="px-3 py-[4px] flex items-center justify-between cursor-pointer"
-          style={{ borderTop: "1px solid #e0e0e0", background: "#f8f9fa" }}
-          onClick={() => setDetailsOpen(!detailsOpen)}
-        >
-          <span className="text-[8px] text-gray-400">{detailsOpen ? "Hide details" : "Flight details"}</span>
-          <span className="text-[8px] text-gray-300">{detailsOpen ? "▲" : "▼"}</span>
-        </div>
-      )}
-      {detailsOpen && showFares && (
-        <div
-          className="py-[8px] px-[14px]"
+          className="py-[6px] px-[12px]"
           style={{ background: "#f8f9fa" }}
         >
           {option.segments.map((seg, si) => (
             <div key={si} className={si > 0 ? "mt-[8px]" : ""}>
               {/* Segment header for multi-segment options */}
               {option.segments.length > 1 && (
-                <div className="text-[8px] text-gray-9000 tracking-[1px] uppercase font-semibold mb-[6px]">
+                <div className="text-[8px] text-gray-900 tracking-[1px] uppercase font-semibold mb-[6px]">
                   Segment {si + 1} — {seg.origin} → {seg.destination}
                 </div>
               )}
@@ -785,13 +765,13 @@ function OptionCard({
                         {/* Departure */}
                         <div className="flex items-start gap-[10px]">
                           <div className="flex flex-col items-center" style={{ width: 12 }}>
-                            <div className="w-[7px] h-[7px] rounded-full border-2 mt-[2px]" style={{ borderColor: "#9aa0a6" }} />
+                            <div className="w-[7px] h-[7px] rounded-full border-2 mt-[2px]" style={{ borderColor: "#1a73e8" }} />
                             <div className="w-[1.5px] flex-1 min-h-[20px]" style={{ background: "#dadce0" }} />
                           </div>
                           <div className="flex-1 pb-[4px]">
                             <div className="flex items-baseline gap-[6px]">
                               <span className="text-[11px] font-bold text-gray-800">{tfmt(leg.departureTime)}</span>
-                              <span className="text-[9px] text-gray-9000">{dfmt(leg.departureTime)}</span>
+                              <span className="text-[9px] text-gray-900">{dfmt(leg.departureTime)}</span>
                             </div>
                             <div className="text-[9px] text-gray-500">
                               {leg.originCity ? `${leg.originCity} (${leg.origin})` : leg.origin}
@@ -805,7 +785,7 @@ function OptionCard({
                         {/* Arrival */}
                         <div className="flex items-start gap-[10px]">
                           <div className="flex flex-col items-center" style={{ width: 12 }}>
-                            <div className="w-[7px] h-[7px] rounded-full border-2 mt-[2px]" style={{ borderColor: "#9aa0a6" }} />
+                            <div className="w-[7px] h-[7px] rounded-full border-2 mt-[2px]" style={{ borderColor: "#1a73e8" }} />
                             {(layoverToNext != null && layoverToNext > 0) && (
                               <div className="w-[1.5px] flex-1 min-h-[12px]" style={{ background: "#e0e0e0" }} />
                             )}
@@ -818,7 +798,7 @@ function OptionCard({
                               {legPlusDays > 0 && (
                                 <sup className="text-[8px] font-bold text-orange-600">+{legPlusDays}</sup>
                               )}
-                              <span className="text-[9px] text-gray-9000">{dfmt(leg.arrivalTime)}</span>
+                              <span className="text-[9px] text-gray-900">{dfmt(leg.arrivalTime)}</span>
                             </div>
                             <div className="text-[9px] text-gray-500">
                               {leg.destinationCity ? `${leg.destinationCity} (${leg.destination})` : leg.destination}
@@ -826,7 +806,7 @@ function OptionCard({
                             {/* Carrier + aircraft info */}
                             <div className="flex items-center gap-[6px] mt-[4px] flex-wrap">
                               <CarrierChip code={leg.marketingCarrier} size={14} />
-                              <span className="text-[8px] text-gray-9000">
+                              <span className="text-[8px] text-gray-900">
                                 {CARRIER_FULL_NAMES[leg.marketingCarrier] || leg.marketingCarrier}
                                 {" · "}
                                 {seg.cabin}
@@ -880,7 +860,7 @@ function OptionCard({
                 /* Fallback when no legs data — show basic segment info */
                 <div className="text-[9px] text-gray-400 flex gap-2 items-center py-[2px]">
                   <CarrierChip code={seg.marketingCarrier} size={14} />
-                  <span className="font-semibold text-gray-9000">{seg.flightNumber}</span>
+                  <span className="font-semibold text-gray-900">{seg.flightNumber}</span>
                   {seg.equipment && <span>· {aircraftName(seg.equipment)}</span>}
                   {seg.operatingCarrier !== seg.marketingCarrier && (
                     <span>· Operated by {CARRIER_FULL_NAMES[seg.operatingCarrier] || seg.operatingCarrier}</span>
@@ -890,6 +870,25 @@ function OptionCard({
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── Fare Classes label ── */}
+      {showFares && (
+        <div style={{ borderTop: "1px solid #e0e0e0", padding: "6px 12px 2px" }}>
+          <span className="text-[10px] tracking-[2px] uppercase" style={{ color: "#9aa0a6" }}>Fare Classes</span>
+        </div>
+      )}
+
+      {/* ── Fare rows (expanded on click or when any checked) ── */}
+      {showFares && (
+        <div style={{ background: "#f8f9fa", borderTop: "1px solid #c5c5c5" }}>
+          <CarrierFareTabs
+            option={option}
+            selectedVariantIndices={selectedVariantIndices}
+            onVariantToggle={onVariantToggle}
+            color={color}
+          />
         </div>
       )}
 
@@ -915,7 +914,7 @@ function OptionCard({
             <span className={`text-[9px] font-bold ${splitDetection.savingsBadge === "green" ? "text-emerald-700" : "text-amber-600"}`}>
               SPLIT PNR — Save up to {pfmt(splitDetection.maxEstimatedSavings)}
             </span>
-            <span className="text-[8px] text-gray-9000 ml-[6px]">
+            <span className="text-[8px] text-gray-900 ml-[6px]">
               {splitDetection.singlePaxRbd} {pfmt(splitDetection.singlePaxPrice)}/pax vs {splitDetection.groupRbd} {pfmt(splitDetection.groupPricePerPerson)}/pax
             </span>
           </div>
@@ -986,12 +985,12 @@ function AIOptionCard({
               {opt.carrierName || opt.carrier}
             </span>
             {opt.totalDuration && (
-              <span className="text-[9px] text-gray-9000">{opt.totalDuration}</span>
+              <span className="text-[9px] text-gray-900">{opt.totalDuration}</span>
             )}
           </div>
           <div className="flex flex-wrap gap-x-[6px] gap-y-[1px] mt-[2px]">
             {opt.segments.map((seg, i) => (
-              <span key={i} className="text-[9px] text-gray-9000 font-mono">
+              <span key={i} className="text-[9px] text-gray-900 font-mono">
                 {i > 0 && <span className="text-gray-800 mx-[2px]">·</span>}
                 <span className="text-gray-500 font-bold">{seg.flightNumber}</span>{" "}
                 {tfmt(seg.departureTime)}→{tfmt(seg.arrivalTime)} {seg.origin}-{seg.destination}
@@ -1050,7 +1049,7 @@ function ChatSuggestionBlock({
 
   return (
     <div className="mt-[10px]">
-      <div className="text-[8px] text-gray-9000 tracking-[2px] uppercase mb-2 flex items-center gap-[6px]">
+      <div className="text-[8px] text-gray-900 tracking-[2px] uppercase mb-2 flex items-center gap-[6px]">
         <span className="text-blue-600">✦</span>
         <span>Suggested options — check fares to add to proposal</span>
       </div>
@@ -1218,7 +1217,7 @@ function SlotTabs({
                     >
                       {fares} fare{fares > 1 ? "s" : ""}
                     </span>
-                    <span className="text-[8px] text-gray-9000">
+                    <span className="text-[8px] text-gray-900">
                       {flights} flight{flights > 1 ? "s" : ""}
                     </span>
                   </>
@@ -1288,7 +1287,7 @@ function ComboCalc({
     >
       <div className="text-[8px] text-gray-400 tracking-[2px] uppercase mb-[7px] flex items-center gap-[6px]">
         <span>Combinations</span>
-        <span className="bg-gray-100 text-gray-9000 px-[6px] py-[1px] rounded-[10px]">
+        <span className="bg-gray-100 text-gray-900 px-[6px] py-[1px] rounded-[10px]">
           {combos.length}
         </span>
       </div>
@@ -1317,7 +1316,7 @@ function ComboCalc({
                     <span className="text-[8px] text-gray-500 font-mono">
                       {x.option.segments[0]?.flightNumber}
                     </span>
-                    <span className="text-[8px] text-gray-9000 max-w-[55px] overflow-hidden text-ellipsis whitespace-nowrap">
+                    <span className="text-[8px] text-gray-900 max-w-[55px] overflow-hidden text-ellipsis whitespace-nowrap">
                       {x.variant.label}
                     </span>
                   </span>
@@ -1335,7 +1334,7 @@ function ComboCalc({
                     LOW
                   </span>
                 )}
-                {delta > 0 && <span className="text-[8px] text-gray-9000">+{pfmt(delta)}</span>}
+                {delta > 0 && <span className="text-[8px] text-gray-900">+{pfmt(delta)}</span>}
                 <span
                   className="text-[11px] font-bold min-w-[60px] text-right"
                   style={{ color: isC ? strategy.color : C.textSec }}
@@ -4597,16 +4596,16 @@ What are your client's priorities?`;
   const displayOptions = useMemo(() => {
     let opts = applyStrategyFilters(activeSlotOptions, currentFilters);
 
-    // Sort — "minimize stops" makes stops the primary sort key
-    const minStops = currentFilters.stops === "minimize";
+    // Sort
     const priceOf = (o: Option) => Math.min(...o.variants.map((v) => v.perAdult));
 
     if (sortMode === "cheapest") {
-      opts.sort((a, b) => (minStops && a.stops !== b.stops ? a.stops - b.stops : 0) || priceOf(a) - priceOf(b));
+      opts.sort((a, b) => priceOf(a) - priceOf(b));
     } else if (sortMode === "fastest") {
-      opts.sort((a, b) => (minStops && a.stops !== b.stops ? a.stops - b.stops : 0) || a.totalDurationMinutes - b.totalDurationMinutes);
+      opts.sort((a, b) => a.totalDurationMinutes - b.totalDurationMinutes);
     } else {
-      opts.sort((a, b) => (minStops && a.stops !== b.stops ? a.stops - b.stops : 0) || (b.score || 0) - (a.score || 0) || priceOf(a) - priceOf(b));
+      // "best" — sort by score descending, then cheapest
+      opts.sort((a, b) => (b.score || 0) - (a.score || 0) || priceOf(a) - priceOf(b));
     }
 
     return opts;
@@ -4907,14 +4906,14 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
           {onNewSearch && (
             <button
               onClick={onNewSearch}
-              className="text-[10px] text-gray-9000 bg-transparent border border-gray-300 rounded px-2 py-1 cursor-pointer hover:text-gray-700 hover:border-gray-300 transition-colors"
+              className="text-[10px] text-gray-900 bg-transparent border border-gray-300 rounded px-2 py-1 cursor-pointer hover:text-gray-700 hover:border-gray-300 transition-colors"
             >
               ← New Search
             </button>
           )}
           <button
             onClick={onBack}
-            className="text-[10px] text-gray-9000 bg-transparent border border-gray-300 rounded px-2 py-1 cursor-pointer hover:text-gray-700 hover:border-gray-300 transition-colors"
+            className="text-[10px] text-gray-900 bg-transparent border border-gray-300 rounded px-2 py-1 cursor-pointer hover:text-gray-700 hover:border-gray-300 transition-colors"
           >
             Simple View
           </button>
@@ -5003,7 +5002,7 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
 
           {/* Tagline + pros/cons */}
           <div className="shrink-0 px-[13px] pt-2" style={{ borderBottom: "1px solid #e0e0e0" }}>
-            <div className="text-[11px] text-gray-9000 mb-[5px] italic">{strategy.tagline}</div>
+            <div className="text-[11px] text-gray-900 mb-[5px] italic">{strategy.tagline}</div>
             <div className="flex gap-[14px] mb-2">
               <div className="flex-1">
                 {strategy.pros.map((p, i) => (
