@@ -9,6 +9,10 @@ import {
   SplitPnrDetection,
   SplitPnrAnalysis,
 } from "@/lib/types";
+import { useRouter } from "next/navigation";
+import { buildSearchUrl } from "@/lib/searchStore";
+import { normalizeSegment, SearchPreferences } from "@/lib/types";
+import ManualSearchForm from "../search/ManualSearchForm";
 import SplitPnrPanel from "../split-pnr/SplitPnrPanel";
 import StrategyFilterPanel from "./strategy-filters/StrategyFilterPanel";
 import HiddenSelectionWarning from "./strategy-filters/HiddenSelectionWarning";
@@ -4653,6 +4657,32 @@ export default function ComparisonBuilder({
   );
 
   const systemPrompt = useMemo(() => buildSystemPrompt(model), [model]);
+  const router = useRouter();
+
+  // Modify Search state
+  const [showModifySearch, setShowModifySearch] = useState(false);
+  const [editSegments, setEditSegments] = useState<SegmentInput[]>(() =>
+    searchSegments.map((s) => normalizeSegment(s as any))
+  );
+  const [editPassengers, setEditPassengers] = useState<PassengerConfig>({ ...passengers });
+  const [editPreferences, setEditPreferences] = useState<SearchPreferences>({});
+
+  const handleModifySearch = useCallback(() => {
+    const validSegments = editSegments.filter(
+      (s) => s.origins.length > 0 && s.destinations.length > 0 && s.departureDate
+    );
+    if (validSegments.length === 0) return;
+    const url = buildSearchUrl(
+      validSegments,
+      editPassengers,
+      Object.keys(editPreferences).length > 0 ? editPreferences : undefined,
+    );
+    router.push(url);
+  }, [editSegments, editPassengers, editPreferences, router]);
+
+  const editSegmentIsValid = editSegments.some(
+    (s) => s.origins.length > 0 && s.destinations.length > 0 && s.departureDate
+  );
 
   // Build split PNR detection lookup from backend probing results
   const splitDetectionMap = useMemo(() => {
@@ -5236,6 +5266,17 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
             </button>
           )}
           <button
+            onClick={() => setShowModifySearch(!showModifySearch)}
+            className="text-[10px] bg-transparent border rounded px-2 py-1 cursor-pointer transition-colors"
+            style={{
+              color: showModifySearch ? "#1a73e8" : "#5f6368",
+              borderColor: showModifySearch ? "#1a73e8" : "#dadce0",
+              background: showModifySearch ? "#e8f0fe" : "transparent",
+            }}
+          >
+            {showModifySearch ? "✕ Close" : "✎ Modify Search"}
+          </button>
+          <button
             onClick={onBack}
             className="text-[10px] text-gray-900 bg-transparent border border-gray-300 rounded px-2 py-1 cursor-pointer hover:text-gray-700 hover:border-gray-300 transition-colors"
           >
@@ -5274,6 +5315,30 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
           })}
         </div>
       </div>
+
+      {/* Modify Search panel — collapsible inline form */}
+      {showModifySearch && (
+        <div className="shrink-0" style={{ borderBottom: "1px solid #e0e0e0", background: "#fafafa" }}>
+          <div className="max-w-4xl mx-auto px-4 py-3">
+            <ManualSearchForm
+              segments={editSegments}
+              passengers={editPassengers}
+              preferences={editPreferences}
+              onSegmentChange={(i, u) => setEditSegments((prev) => prev.map((s, idx) => idx === i ? { ...s, ...u } : s))}
+              onAddSegment={() => setEditSegments((prev) => {
+                const last = prev[prev.length - 1];
+                return [...prev, { origins: last?.destinations?.length ? [...last.destinations] : [], destinations: [], departureDate: last?.departureDate || "" }];
+              })}
+              onRemoveSegment={(i) => setEditSegments((prev) => prev.filter((_, idx) => idx !== i))}
+              onPassengersChange={(u) => setEditPassengers((prev) => ({ ...prev, ...u }))}
+              onPreferencesChange={(u) => setEditPreferences((prev) => ({ ...prev, ...u }))}
+              onSearch={handleModifySearch}
+              loading={false}
+              isValid={editSegmentIsValid}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 flex overflow-hidden">
         {/* ── Left: Strategy workspace ── */}

@@ -1,5 +1,6 @@
 "use client";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   SearchRequest,
   SearchResponse,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/types";
 import { searchFlights } from "@/lib/api";
 import { buildHistoryEntry } from "@/lib/exportSearchHistory";
+import { buildSearchUrl, decodeSearchParams } from "@/lib/searchStore";
 
 const defaultSegment: SegmentInput = {
   origins: [],
@@ -26,12 +28,30 @@ const defaultPassengers: PassengerConfig = {
 };
 
 export function useSearch() {
+  const urlParams = useSearchParams();
   const [segments, setSegments] = useState<SegmentInput[]>([{ ...defaultSegment }]);
   const [passengers, setPassengers] = useState<PassengerConfig>({ ...defaultPassengers });
   const [preferences, setPreferences] = useState<SearchPreferences>({});
+  const [restoredFromUrl, setRestoredFromUrl] = useState(false);
+
+  // Restore form state from ?q= URL param (e.g. when navigating back from results)
+  useEffect(() => {
+    if (restoredFromUrl) return;
+    const q = urlParams.get("q");
+    if (!q) return;
+    const decoded = decodeSearchParams(q);
+    if (!decoded) return;
+    if (decoded.segments?.length) {
+      setSegments(decoded.segments.map((s) => normalizeSegment(s as any)));
+    }
+    if (decoded.passengers) setPassengers(decoded.passengers);
+    if (decoded.preferences) setPreferences(decoded.preferences);
+    setRestoredFromUrl(true);
+  }, [urlParams, restoredFromUrl]);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastSearchUrl, setLastSearchUrl] = useState<string | null>(null);
   const searchHistoryRef = useRef<SearchHistoryEntry[]>([]);
 
   const addSegment = useCallback(() => {
@@ -87,6 +107,7 @@ export function useSearch() {
     setLoading(true);
     setError(null);
     setResponse(null);
+    setLastSearchUrl(null);
 
     try {
       const request: SearchRequest = {
@@ -96,6 +117,14 @@ export function useSearch() {
       };
       const data = await searchFlights(request);
       setResponse(data);
+
+      // Generate bookmarkable URL from search params (no storage needed)
+      const url = buildSearchUrl(
+        validSegments,
+        passengers,
+        Object.keys(preferences).length > 0 ? preferences : undefined,
+      );
+      setLastSearchUrl(url);
 
       // Accumulate search history for export
       const entry = buildHistoryEntry(
@@ -124,6 +153,7 @@ export function useSearch() {
     loading,
     error,
     isValid,
+    lastSearchUrl,
     addSegment,
     removeSegment,
     updateSegment,
