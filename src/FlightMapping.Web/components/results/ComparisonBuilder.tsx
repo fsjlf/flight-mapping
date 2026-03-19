@@ -330,6 +330,13 @@ function CarrierFareTabs({
   const showTabs = carrierGroups.order.length > 1;
   const activeItems = carrierGroups.groups.get(activeCarrier) || [];
 
+  // Filter otherVariants to only show those matching the active carrier tab
+  const activeOtherVariants = useMemo(() => {
+    return (option.otherVariants || []).filter(
+      (v) => (v.validatingCarrier || option.carrier) === activeCarrier
+    );
+  }, [option.otherVariants, option.carrier, activeCarrier]);
+
   return (
     <div className="px-2 pb-2">
       {showTabs ? (
@@ -339,7 +346,11 @@ function CarrierFareTabs({
           </span>
           {carrierGroups.order.map((vc) => {
             const isActive = vc === activeCarrier;
-            const count = carrierGroups.groups.get(vc)!.length;
+            const mainCount = carrierGroups.groups.get(vc)!.length;
+            const otherCount = (option.otherVariants || []).filter(
+              (v) => (v.validatingCarrier || option.carrier) === vc
+            ).length;
+            const count = mainCount + (otherCount > 0 ? otherCount : 0);
             const hasSelected = carrierGroups.groups.get(vc)!.some((g) =>
               selectedVariantIndices.has(g.originalIndex)
             );
@@ -374,7 +385,7 @@ function CarrierFareTabs({
       )}
       <CabinComboAccordion
         items={activeItems}
-        otherVariants={option.otherVariants || []}
+        otherVariants={activeOtherVariants}
         option={option}
         selectedVariantIndices={selectedVariantIndices}
         onVariantToggle={onVariantToggle}
