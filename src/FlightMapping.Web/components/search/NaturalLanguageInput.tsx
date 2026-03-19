@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { SearchRequest } from "@/lib/types";
-import { parseNaturalLanguage } from "@/lib/parser";
+import { parseWithAI } from "@/lib/api";
 
 interface Props {
   onParsed: (request: Partial<SearchRequest>) => void;
@@ -9,20 +9,22 @@ interface Props {
 
 export default function NaturalLanguageInput({ onParsed }: Props) {
   const [text, setText] = useState("");
-  const [feedback, setFeedback] = useState<{
-    segments: number;
-    warnings: string[];
-  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleParse = () => {
+  const handleParse = async () => {
     if (!text.trim()) return;
-    const result = parseNaturalLanguage(text);
-    onParsed(result.request);
+    setLoading(true);
+    setError(null);
 
-    setFeedback({
-      segments: result.request.segments?.length || 0,
-      warnings: result.warnings,
-    });
+    try {
+      const result = await parseWithAI(text);
+      onParsed(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to parse request");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -30,34 +32,21 @@ export default function NaturalLanguageInput({ onParsed }: Props) {
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={`Paste your itinerary here, e.g.:\n\nNYC to London March 20, London to Paris March 25, back to NYC March 30, 2 adults business`}
+        placeholder={`Describe your trip in plain English, e.g.:\n\n"2 adults flying business from NYC to London March 20, back March 27, prefer nonstop"`}
         rows={5}
         className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+        disabled={loading}
       />
       <button
         onClick={handleParse}
-        disabled={!text.trim()}
+        disabled={!text.trim() || loading}
         className="px-4 py-2 bg-gray-800 text-white text-sm rounded-lg hover:bg-gray-900 disabled:opacity-50 transition-colors"
       >
-        Parse & Fill Form
+        {loading ? "Parsing with AI..." : "Parse & Fill Form"}
       </button>
 
-      {feedback && (
-        <div className="text-sm">
-          {feedback.segments > 0 ? (
-            <p className="text-green-600">
-              Parsed {feedback.segments} segment{feedback.segments > 1 ? "s" : ""}
-              {" "}&mdash; review the form below and click Search.
-            </p>
-          ) : (
-            <p className="text-amber-600">
-              Could not parse any segments. Try a format like &quot;NYC to London March 20&quot;.
-            </p>
-          )}
-          {feedback.warnings.map((w, i) => (
-            <p key={i} className="text-amber-600">{w}</p>
-          ))}
-        </div>
+      {error && (
+        <p className="text-sm text-red-600">{error}</p>
       )}
     </div>
   );

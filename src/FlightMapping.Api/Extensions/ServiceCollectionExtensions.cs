@@ -31,6 +31,7 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddFlightSearch(this IServiceCollection services)
     {
+        services.AddSingleton<IRouteExpander, RouteExpander>();
         services.AddSingleton<ITripClassifier, TripClassifier>();
         services.AddSingleton<IStrategyGenerator, StrategyGenerator>();
         services.AddSingleton<IBfmRequestBuilder, BfmRequestBuilder>();
@@ -38,6 +39,11 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IResultEnricher, ResultEnricher>();
         services.AddSingleton<IItineraryScorer, ItineraryScorer>();
         services.AddScoped<ISearchOrchestrator, SearchOrchestrator>();
+
+        // Split PNR services
+        services.AddSingleton<IWaterfallCalculator, WaterfallCalculator>();
+        services.AddSingleton<ISplitPnrDetector, SplitPnrDetector>();
+        services.AddSingleton<ISplitPnrAnalyzer, SplitPnrAnalyzer>();
 
         return services;
     }

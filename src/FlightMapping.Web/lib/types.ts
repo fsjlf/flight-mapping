@@ -26,11 +26,22 @@ export interface SearchRequest {
 }
 
 export interface SegmentInput {
-  origin: string;
-  destination: string;
-  departureDate: string; // YYYY-MM-DD
+  origins: string[];      // multi-airport: e.g. ["JFK","EWR"]
+  destinations: string[]; // multi-airport: e.g. ["LHR","CDG"]
+  departureDate: string;  // YYYY-MM-DD
   cabinOverride?: CabinClass;
   timePreference?: DepartureTimeWindow;
+}
+
+/** Normalize old single-airport format to array format */
+export function normalizeSegment(seg: Partial<SegmentInput> & { origin?: string; destination?: string }): SegmentInput {
+  return {
+    origins: seg.origins ?? (seg.origin ? [seg.origin] : []),
+    destinations: seg.destinations ?? (seg.destination ? [seg.destination] : []),
+    departureDate: seg.departureDate ?? "",
+    cabinOverride: seg.cabinOverride,
+    timePreference: seg.timePreference,
+  };
 }
 
 export interface PassengerConfig {
@@ -41,7 +52,8 @@ export interface PassengerConfig {
 }
 
 export interface SearchPreferences {
-  cabin?: CabinClass;
+  cabin?: CabinClass;           // single cabin (legacy / fallback)
+  cabins?: CabinClass[];        // multi-cabin search — sent to BFM as multiple CabinPref entries
   preferredCarriers?: string[];
   excludedCarriers?: string[];
   maxStops?: number;
@@ -57,6 +69,7 @@ export interface SearchResponse {
   classification: TripClassification;
   itineraries: EnrichedItinerary[];
   metadata: SearchMetadata;
+  splitPnrOpportunities?: SplitPnrDetection[];
 }
 
 export interface TripClassification {
@@ -84,6 +97,7 @@ export interface EnrichedItinerary {
   eTicketable: boolean;
   governingCarriers?: string;
   pricingSource: string;
+  coveredSegmentIndices: number[];
 }
 
 export interface EnrichedSegment {
@@ -182,4 +196,219 @@ export interface StrategyResult {
   durationMs: number;
   success: boolean;
   error?: string;
+}
+
+// --- Hybrid Package Breakdown ---
+export interface HybridPackageBreakdown {
+  totalPerAdult: number;
+  packagePerAdult: number;
+  packageLabel: string;
+  owLegs: { label: string; pricePerAdult: number }[];
+}
+
+// --- Slim Export Types (for JSON export — optimized for AI conversation) ---
+
+/** Compact segment: no nested legs, no brand features, no tax breakdown */
+export interface SlimSegment {
+  from: string;
+  to: string;
+  depart: string;
+  arrive: string;
+  duration: string;
+  stops: number;
+  carrier: string;
+  operated?: string; // only if different from marketing carrier
+  flight: string;
+  cabin: string;
+  bookingClass: string;
+  equipment: string;
+  brand?: string; // brand name only (no features array)
+}
+
+/** Summary of one fare option for a flight combo */
+export interface SlimFare {
+  name: string; // brand name or booking class
+  perAdult: number;
+  refundable: boolean;
+}
+
+/** One unique flight combination with all fare options summarized */
+export interface SlimItinerary {
+  segments: SlimSegment[];
+  totalDuration: string;
+  price: number; // cheapest fare, per adult
+  currency: string;
+  score: number;
+  carrier: string; // validating carrier
+  refundable: boolean;
+  fares: SlimFare[]; // all distinct fare options for this flight combo
+}
+
+export interface SearchHistoryEntry {
+  searchId: string;
+  timestamp: string;
+  request: {
+    segments: SegmentInput[];
+    passengers: PassengerConfig;
+    preferences?: SearchPreferences;
+  };
+  results: {
+    tripType: string;
+    roundTrip: SlimItinerary[];
+    mixAndMatch: {
+      leg: number;
+      route: string;
+      date: string;
+      options: SlimItinerary[];
+    }[];
+    smartPackages: {
+      covers: string;
+      options: SlimItinerary[];
+    }[];
+  };
+  counts: {
+    total: number;
+    roundTrip: number;
+    mixAndMatch: number;
+    smartPackages: number;
+  };
+}
+
+export interface SearchHistoryExport {
+  exportedAt: string;
+  sessionSearchCount: number;
+  searches: SearchHistoryEntry[];
+}
+
+// --- Split PNR / Waterfall Types ---
+
+export interface SplitPnrDetection {
+  opportunityDetected: boolean;
+  flightKey: string;
+  singlePaxPrice: number;
+  singlePaxRbd: string;
+  groupPricePerPerson: number;
+  groupRbd: string;
+  deltaPerPerson: number;
+  totalPassengers: number;
+  minEstimatedSavings: number;
+  maxEstimatedSavings: number;
+  savingsBadge: "green" | "yellow" | "none";
+  cheapSeatsAvailable?: number; // exact auth cap from incremental probing
+  tiers?: SplitAllocationTier[]; // multi-tier allocation from probing
+}
+
+export interface SplitAllocationTier {
+  rbd: string;
+  segmentRbds?: string[]; // per-segment RBDs for roundtrips (e.g. ["Z","I"])
+  count: number;
+  pricePerPerson: number;
+  subtotal: number;
+}
+
+export interface FareClassInfo {
+  rbd: string;
+  authCap: number;
+  farePerPerson: number;
+  fareBasisCode: string;
+  cabin: CabinClass;
+  brandName?: string;
+  rulesSummary?: string;
+}
+
+export interface GroupFare {
+  rbd: string;
+  farePerPerson: number;
+  total: number;
+}
+
+export interface WaterfallInput {
+  cabinPhysicalSeats: number;
+  totalPassengers: number;
+  fareClasses: FareClassInfo[];
+  groupFare: GroupFare;
+}
+
+export interface WaterfallAllocation {
+  rbd: string;
+  count: number;
+  farePerPerson: number;
+  subtotal: number;
+  brandName?: string;
+  rulesSummary?: string;
+  fareBasisCode?: string;
+}
+
+export interface ClassSnapshot {
+  rbd: string;
+  authRemaining: number;
+  physicalRemaining: number;
+  effectiveAvailable: number;
+  fare: number;
+  bindingConstraint: "cap" | "physical" | "both";
+}
+
+export interface WaterfallSnapshot {
+  label: string;
+  physicalRemaining: number;
+  classes: ClassSnapshot[];
+}
+
+export interface WaterfallResult {
+  feasible: boolean;
+  failureReason?: string;
+  allocations: WaterfallAllocation[];
+  totalCost: number;
+  groupCost: number;
+  savings: number;
+  savingsPercent: number;
+  snapshots: WaterfallSnapshot[];
+}
+
+export interface PriceBreakpoint {
+  passengerCount: number;
+  rbd: string;
+  pricePerPerson: number;
+  inferredAuthCap: number;
+}
+
+export interface PnrGroup {
+  pnrNumber: number;
+  rbd: string;
+  segmentRbds?: string[]; // per-segment RBDs for roundtrips (e.g. ["Z","I"])
+  passengerCount: number;
+  farePerPerson: number;
+  subtotal: number;
+  brandName?: string;
+  rulesSummary?: string;
+}
+
+export interface SingleBookingOption {
+  rbd: string;
+  pricePerPerson: number;
+  total: number;
+  brandName?: string;
+  rulesSummary?: string;
+}
+
+export interface SplitBookingOption {
+  pnrs: PnrGroup[];
+  total: number;
+  averagePerPerson: number;
+}
+
+export interface SplitPnrAnalysis {
+  flightKey: string;
+  carrier: string;
+  route: string;
+  cabin: CabinClass;
+  totalPassengers: number;
+  singleBooking: SingleBookingOption;
+  recommendedSplit: SplitBookingOption;
+  waterfall: WaterfallResult;
+  savings: number;
+  savingsPercent: number;
+  averagePricePerPerson: number;
+  tradeOffs: string[];
+  priceBreakpoints: PriceBreakpoint[];
 }

@@ -1,18 +1,26 @@
 "use client";
 import { useState } from "react";
-import { EnrichedItinerary } from "@/lib/types";
+import { EnrichedItinerary, SplitPnrDetection, SplitPnrAnalysis } from "@/lib/types";
 import { formatTime, formatCurrency } from "@/lib/formatters";
 import Badge from "../ui/Badge";
 import ItineraryDetail from "./ItineraryDetail";
+import SplitPnrBadge from "../split-pnr/SplitPnrBadge";
+import SplitPnrPanel from "../split-pnr/SplitPnrPanel";
 
 interface Props {
   itinerary: EnrichedItinerary;
   variants?: EnrichedItinerary[];
+  /** Min achievable stops per segment position across all itineraries. */
+  minStopsPerSeg?: number[];
+  /** Split PNR detection for this itinerary's flight, if any. */
+  splitPnrDetection?: SplitPnrDetection;
 }
 
-export default function ItineraryCard({ itinerary, variants }: Props) {
+export default function ItineraryCard({ itinerary, variants, minStopsPerSeg, splitPnrDetection }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [showVariants, setShowVariants] = useState(false);
+  const [showSplitPanel, setShowSplitPanel] = useState(false);
+  const [splitAnalysis, setSplitAnalysis] = useState<SplitPnrAnalysis | null>(null);
   const { segments, pricing, scores, strategyType } = itinerary;
 
   const firstLeg = segments[0]?.legs[0];
@@ -24,6 +32,11 @@ export default function ItineraryCard({ itinerary, variants }: Props) {
   const totalStops = segments.reduce((sum, s) => sum + s.stops, 0);
   const stopsLabel =
     totalStops === 0 ? "Nonstop" : `${totalStops} stop${totalStops > 1 ? "s" : ""}`;
+
+  // Check if any segment has no nonstop option available
+  const hasNoNonstopSegs = minStopsPerSeg
+    ? segments.some((seg, i) => seg.stops > 0 && minStopsPerSeg[i] > 0)
+    : false;
 
   return (
     <div
@@ -59,6 +72,14 @@ export default function ItineraryCard({ itinerary, variants }: Props) {
               <span>{itinerary.totalDurationFormatted}</span>
               <span className="text-gray-300">·</span>
               <span>{stopsLabel}</span>
+              {hasNoNonstopSegs && (
+                <span className="text-[9px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+                  No nonstop avail on {segments
+                    .map((seg, i) => (minStopsPerSeg && minStopsPerSeg[i] > 0 ? `${seg.origin}→${seg.destination}` : null))
+                    .filter(Boolean)
+                    .join(", ")}
+                </span>
+              )}
               <span className="text-gray-300">·</span>
               <span>{itinerary.validatingCarrier}</span>
             </div>
@@ -111,6 +132,82 @@ export default function ItineraryCard({ itinerary, variants }: Props) {
             <Badge text="Non-refundable" variant="warning" />
           )}
         </div>
+
+        {/* Split PNR badge */}
+        {splitPnrDetection && splitPnrDetection.opportunityDetected && (
+          <SplitPnrBadge
+            detection={splitPnrDetection}
+            onShowOptions={async () => {
+              // Build mock analysis for demo (in production, this calls the analyze API)
+              const det = splitPnrDetection;
+              const seg = segments[0];
+              const mockAnalysis: SplitPnrAnalysis = {
+                flightKey: det.flightKey,
+                carrier: itinerary.validatingCarrier,
+                route: segments.map(s => s.origin).join("→") + "→" + segments[segments.length - 1]?.destination,
+                cabin: seg?.cabin ?? "Business",
+                totalPassengers: det.totalPassengers,
+                singleBooking: {
+                  rbd: det.groupRbd,
+                  pricePerPerson: det.groupPricePerPerson,
+                  total: det.groupPricePerPerson * det.totalPassengers,
+                },
+                recommendedSplit: {
+                  pnrs: [
+                    { pnrNumber: 1, rbd: det.singlePaxRbd, passengerCount: Math.min(2, det.totalPassengers - 1), farePerPerson: det.singlePaxPrice, subtotal: Math.min(2, det.totalPassengers - 1) * det.singlePaxPrice },
+                    { pnrNumber: 2, rbd: det.groupRbd, passengerCount: det.totalPassengers - Math.min(2, det.totalPassengers - 1), farePerPerson: det.groupPricePerPerson, subtotal: (det.totalPassengers - Math.min(2, det.totalPassengers - 1)) * det.groupPricePerPerson },
+                  ],
+                  total: Math.min(2, det.totalPassengers - 1) * det.singlePaxPrice + (det.totalPassengers - Math.min(2, det.totalPassengers - 1)) * det.groupPricePerPerson,
+                  averagePerPerson: (Math.min(2, det.totalPassengers - 1) * det.singlePaxPrice + (det.totalPassengers - Math.min(2, det.totalPassengers - 1)) * det.groupPricePerPerson) / det.totalPassengers,
+                },
+                waterfall: {
+                  feasible: true,
+                  allocations: [
+                    { rbd: det.singlePaxRbd, count: Math.min(2, det.totalPassengers - 1), farePerPerson: det.singlePaxPrice, subtotal: Math.min(2, det.totalPassengers - 1) * det.singlePaxPrice },
+                    { rbd: det.groupRbd, count: det.totalPassengers - Math.min(2, det.totalPassengers - 1), farePerPerson: det.groupPricePerPerson, subtotal: (det.totalPassengers - Math.min(2, det.totalPassengers - 1)) * det.groupPricePerPerson },
+                  ],
+                  totalCost: Math.min(2, det.totalPassengers - 1) * det.singlePaxPrice + (det.totalPassengers - Math.min(2, det.totalPassengers - 1)) * det.groupPricePerPerson,
+                  groupCost: det.groupPricePerPerson * det.totalPassengers,
+                  savings: det.maxEstimatedSavings,
+                  savingsPercent: det.groupPricePerPerson > 0 ? Math.round((det.maxEstimatedSavings / (det.groupPricePerPerson * det.totalPassengers)) * 1000) / 10 : 0,
+                  snapshots: [
+                    { label: "Initial", physicalRemaining: 8, classes: [
+                      { rbd: det.singlePaxRbd, authRemaining: 2, physicalRemaining: 8, effectiveAvailable: 2, fare: det.singlePaxPrice, bindingConstraint: "cap" },
+                      { rbd: det.groupRbd, authRemaining: 6, physicalRemaining: 8, effectiveAvailable: 6, fare: det.groupPricePerPerson, bindingConstraint: "cap" },
+                    ]},
+                    { label: `Book ${Math.min(2, det.totalPassengers - 1)} in ${det.singlePaxRbd}`, physicalRemaining: 8 - Math.min(2, det.totalPassengers - 1), classes: [
+                      { rbd: det.singlePaxRbd, authRemaining: 0, physicalRemaining: 8 - Math.min(2, det.totalPassengers - 1), effectiveAvailable: 0, fare: det.singlePaxPrice, bindingConstraint: "cap" },
+                      { rbd: det.groupRbd, authRemaining: 6 - Math.min(2, det.totalPassengers - 1), physicalRemaining: 8 - Math.min(2, det.totalPassengers - 1), effectiveAvailable: Math.min(6 - Math.min(2, det.totalPassengers - 1), 8 - Math.min(2, det.totalPassengers - 1)), fare: det.groupPricePerPerson, bindingConstraint: "cap" },
+                    ]},
+                  ],
+                },
+                savings: det.maxEstimatedSavings,
+                savingsPercent: det.groupPricePerPerson > 0 ? Math.round((det.maxEstimatedSavings / (det.groupPricePerPerson * det.totalPassengers)) * 1000) / 10 : 0,
+                averagePricePerPerson: (Math.min(2, det.totalPassengers - 1) * det.singlePaxPrice + (det.totalPassengers - Math.min(2, det.totalPassengers - 1)) * det.groupPricePerPerson) / det.totalPassengers,
+                tradeOffs: [
+                  "2 separate confirmation numbers",
+                  `${det.singlePaxRbd} class may have restricted fare rules`,
+                  "Each PNR rebooks independently if flight is disrupted",
+                  "Book seats early to guarantee sitting together",
+                ],
+                priceBreakpoints: [
+                  { passengerCount: 1, rbd: det.singlePaxRbd, pricePerPerson: det.singlePaxPrice, inferredAuthCap: 2 },
+                  { passengerCount: det.totalPassengers, rbd: det.groupRbd, pricePerPerson: det.groupPricePerPerson, inferredAuthCap: 6 },
+                ],
+              };
+              setSplitAnalysis(mockAnalysis);
+              setShowSplitPanel(true);
+            }}
+          />
+        )}
+
+        {/* Split PNR full panel (modal) */}
+        {showSplitPanel && splitAnalysis && (
+          <SplitPnrPanel
+            analysis={splitAnalysis}
+            onClose={() => setShowSplitPanel(false)}
+          />
+        )}
 
         {/* Fare options grid */}
         {variants && variants.length > 0 && (

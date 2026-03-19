@@ -374,7 +374,7 @@ function MoreFilters({
             <div key={idx}>
               <label className="block text-xs font-medium text-gray-700 mb-1.5">
                 {searchSegments.length > 1
-                  ? `${seg.origin} → ${seg.destination} departure`
+                  ? `${seg.origins[0] || ""} → ${seg.destinations[0] || ""} departure`
                   : "Departure time"}
               </label>
               <div className="flex flex-wrap gap-1">

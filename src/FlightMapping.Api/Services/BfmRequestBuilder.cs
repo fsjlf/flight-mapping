@@ -18,8 +18,22 @@ public class BfmRequestBuilder : IBfmRequestBuilder
 
     public BfmRequest Build(StrategyApiCall apiCall, SearchRequest searchRequest)
     {
-        var effectiveCabin = DetermineEffectiveCabin(apiCall, searchRequest);
         var pax = searchRequest.Passengers;
+        var globalCabin = searchRequest.Preferences?.Cabin ?? CabinClass.Economy;
+
+        // Collect the effective cabin for each segment in this call
+        var segCabins = apiCall.SegmentIndices
+            .Select(i => searchRequest.Segments[i].CabinOverride ?? globalCabin)
+            .ToList();
+        var hasMixedCabins = segCabins.Distinct().Count() > 1;
+
+        // Global CabinPref is ALWAYS set (Sabre needs a baseline).
+        // For mixed-cabin, per-OD TPA_Extensions.CabinPref overrides it per leg.
+        var globalCabinPrefs = BuildGlobalCabinPrefs(apiCall, searchRequest, segCabins);
+
+        // Determine trip type for TPA_Extensions
+        var isRoundTrip = apiCall.SegmentIndices.Count == 2
+            && searchRequest.Segments.Count >= 2;
 
         var request = new BfmRequest
         {
@@ -36,14 +50,16 @@ public class BfmRequestBuilder : IBfmRequestBuilder
                         }
                     ]
                 },
-                OriginDestinationInformation = BuildOriginDestinations(apiCall, searchRequest),
+                OriginDestinationInformation = BuildOriginDestinations(apiCall, searchRequest, segCabins, hasMixedCabins),
                 TravelPreferences = new BfmTravelPreferences
                 {
-                    CabinPref = [new BfmCabinPref { Cabin = MapCabinCode(effectiveCabin) }],
+                    CabinPref = globalCabinPrefs,
                     TpaExtensions = new BfmTravelPrefExtensions
                     {
                         NumTrips = new BfmNumTrips { Number = 200 },
-                        DataSources = new BfmDataSources()
+                        DataSources = new BfmDataSources(),
+                        // Signal roundtrip when we have 2 ODs — helps Sabre with mixed-cabin pairing
+                        TripType = isRoundTrip ? new BfmTripType { Value = "Return" } : null
                     }
                 },
                 TravelerInfoSummary = BuildTravelerInfo(pax),
@@ -55,24 +71,42 @@ public class BfmRequestBuilder : IBfmRequestBuilder
     }
 
     /// <summary>
-    /// Determines the effective cabin for an API call. If all segments share the same cabin,
-    /// use that. If mixed, use the most permissive (highest) cabin so Sabre doesn't exclude results.
+    /// Build global CabinPref — always present as the baseline.
+    /// For single-cabin searches, this is the only cabin preference needed.
+    /// For mixed-cabin, per-OD overrides will supplement this.
     /// </summary>
-    private static CabinClass DetermineEffectiveCabin(StrategyApiCall apiCall, SearchRequest request)
+    private static List<BfmCabinPref> BuildGlobalCabinPrefs(
+        StrategyApiCall apiCall,
+        SearchRequest request,
+        List<CabinClass> segCabins)
     {
-        var globalCabin = request.Preferences?.Cabin ?? CabinClass.Economy;
+        var allCabins = new HashSet<CabinClass>();
 
-        var cabins = apiCall.SegmentIndices
-            .Select(i => request.Segments[i].CabinOverride ?? globalCabin)
-            .Distinct()
+        // Always include all distinct cabins from the segments
+        foreach (var c in segCabins)
+            allCabins.Add(c);
+
+        // Also consider global multi-cabin prefs if no per-segment overrides
+        var hasAnyOverride = apiCall.SegmentIndices
+            .Any(i => request.Segments[i].CabinOverride.HasValue);
+
+        if (!hasAnyOverride && request.Preferences?.Cabins is { Count: > 0 })
+        {
+            foreach (var c in request.Preferences.Cabins)
+                allCabins.Add(c);
+        }
+
+        return allCabins
+            .OrderBy(c => c)
+            .Select(c => new BfmCabinPref { Cabin = MapCabinCode(c) })
             .ToList();
-
-        return cabins.Count == 1 ? cabins[0] : cabins.Max();
     }
 
     private static List<BfmOriginDestination> BuildOriginDestinations(
         StrategyApiCall apiCall,
-        SearchRequest searchRequest)
+        SearchRequest searchRequest,
+        List<CabinClass> segCabins,
+        bool hasMixedCabins)
     {
         var ods = new List<BfmOriginDestination>();
 
@@ -83,13 +117,27 @@ public class BfmRequestBuilder : IBfmRequestBuilder
 
             var timeStr = MapTimePreference(seg.TimePreference);
 
-            ods.Add(new BfmOriginDestination
+            var od = new BfmOriginDestination
             {
                 Rph = (i + 1).ToString(),
                 DepartureDateTime = seg.DepartureDate.ToString("yyyy-MM-dd") + timeStr,
                 OriginLocation = new BfmLocation { LocationCode = seg.Origin.ToUpperInvariant() },
                 DestinationLocation = new BfmLocation { LocationCode = seg.Destination.ToUpperInvariant() }
-            });
+            };
+
+            // When segments have different cabin requirements, set per-OD cabin override
+            // AND SegmentType Code="O" to signal Sabre this is an individual leg with its own cabin.
+            // The global CabinPref remains set as the baseline.
+            if (hasMixedCabins)
+            {
+                od.TpaExtensions = new BfmOdTpaExtensions
+                {
+                    CabinPref = new BfmCabinPref { Cabin = MapCabinCode(segCabins[i]) },
+                    SegmentType = new BfmSegmentType { Code = "O" }
+                };
+            }
+
+            ods.Add(od);
         }
 
         return ods;

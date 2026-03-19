@@ -1,49 +1,55 @@
 "use client";
 import { useState } from "react";
 import { CabinClass, DepartureTimeWindow, SegmentInput } from "@/lib/types";
+import AirportChipInput from "./AirportChipInput";
 
 interface Props {
   segment: SegmentInput;
   index: number;
   canRemove: boolean;
   globalCabin: CabinClass;
+  autoFocusDestination?: boolean;
   onChange: (index: number, updates: Partial<SegmentInput>) => void;
   onRemove: (index: number) => void;
 }
+
+const CABIN_OPTIONS: { value: CabinClass; short: string; label: string }[] = [
+  { value: "Economy", short: "Econ", label: "Economy" },
+  { value: "PremiumEconomy", short: "Prem", label: "Premium Economy" },
+  { value: "Business", short: "Biz", label: "Business" },
+  { value: "First", short: "First", label: "First" },
+];
 
 export default function SegmentRow({
   segment,
   index,
   canRemove,
   globalCabin,
+  autoFocusDestination,
   onChange,
   onRemove,
 }: Props) {
-  const hasOverrides = !!segment.cabinOverride || !!segment.timePreference;
-  const [expanded, setExpanded] = useState(hasOverrides);
+  const hasTimeOverride = !!segment.timePreference;
+  const [showTime, setShowTime] = useState(hasTimeOverride);
+
+  // Effective cabin: per-segment override or global default
+  const effectiveCabin = segment.cabinOverride || globalCabin;
 
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-3">
         <span className="text-sm text-gray-400 w-4">{index + 1}</span>
-        <input
-          type="text"
+        <AirportChipInput
+          codes={segment.origins}
+          onChange={(codes) => onChange(index, { origins: codes })}
           placeholder="From (e.g. JFK)"
-          value={segment.origin}
-          onChange={(e) => onChange(index, { origin: e.target.value.toUpperCase() })}
-          maxLength={3}
-          className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
         />
         <span className="text-gray-400">&rarr;</span>
-        <input
-          type="text"
+        <AirportChipInput
+          codes={segment.destinations}
+          onChange={(codes) => onChange(index, { destinations: codes })}
           placeholder="To (e.g. LHR)"
-          value={segment.destination}
-          onChange={(e) =>
-            onChange(index, { destination: e.target.value.toUpperCase() })
-          }
-          maxLength={3}
-          className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+          autoFocus={autoFocusDestination}
         />
         <input
           type="date"
@@ -51,21 +57,48 @@ export default function SegmentRow({
           onChange={(e) => onChange(index, { departureDate: e.target.value })}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
+
+        {/* Inline cabin selector — always visible */}
+        <div className="flex rounded-lg overflow-hidden border border-gray-300">
+          {CABIN_OPTIONS.map(({ value, short }) => {
+            const active = effectiveCabin === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() =>
+                  onChange(index, {
+                    cabinOverride: value === globalCabin ? undefined : value,
+                  })
+                }
+                className={`px-2 py-1.5 text-xs transition-all cursor-pointer border-none ${
+                  active
+                    ? "bg-blue-600 text-white font-semibold"
+                    : "bg-white text-gray-500 hover:bg-gray-50"
+                }`}
+                title={CABIN_OPTIONS.find((o) => o.value === value)?.label}
+              >
+                {short}
+              </button>
+            );
+          })}
+        </div>
+
         <button
-          onClick={() => setExpanded(!expanded)}
+          onClick={() => setShowTime(!showTime)}
           className={`p-1.5 rounded-md transition-colors ${
-            hasOverrides
+            hasTimeOverride
               ? "text-blue-600 bg-blue-50 hover:bg-blue-100"
               : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
           }`}
-          title="Per-segment options"
+          title="Departure time preference"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={2}
-              d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
         </button>
@@ -80,26 +113,8 @@ export default function SegmentRow({
         )}
       </div>
 
-      {expanded && (
+      {showTime && (
         <div className="flex items-center gap-3 ml-7 pl-1">
-          <div>
-            <label className="block text-xs text-gray-400 mb-0.5">Cabin</label>
-            <select
-              value={segment.cabinOverride || ""}
-              onChange={(e) =>
-                onChange(index, {
-                  cabinOverride: (e.target.value as CabinClass) || undefined,
-                })
-              }
-              className="px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Default ({globalCabin})</option>
-              <option value="Economy">Economy</option>
-              <option value="PremiumEconomy">Premium Economy</option>
-              <option value="Business">Business</option>
-              <option value="First">First</option>
-            </select>
-          </div>
           <div>
             <label className="block text-xs text-gray-400 mb-0.5">Departure time</label>
             <select
