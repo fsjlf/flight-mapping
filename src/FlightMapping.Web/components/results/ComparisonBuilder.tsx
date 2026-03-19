@@ -8,6 +8,7 @@ import {
   EnrichedSegment,
   SplitPnrDetection,
   SplitPnrAnalysis,
+  SplitAllocationTier,
 } from "@/lib/types";
 import { useRouter } from "next/navigation";
 import { buildSearchUrl } from "@/lib/searchStore";
@@ -162,19 +163,31 @@ function FareRow({
   refundable,
   fareTerms,
   checked,
+  checkedSplit,
   onToggle,
+  onToggleSplit,
   color,
   segmentBrands,
+  splitTiers,
+  totalPassengers,
 }: {
   label: string;
   perAdult: number;
   refundable: boolean;
   fareTerms?: FareTerms;
   checked: boolean;
+  checkedSplit?: boolean;
   onToggle: () => void;
+  onToggleSplit?: () => void;
   color: string;
   segmentBrands?: { origin: string; destination: string; brand: string; cabin: string }[];
+  splitTiers?: SplitAllocationTier[];
+  totalPassengers?: number;
 }) {
+  const pax = totalPassengers ?? 1;
+  const hasSplit = splitTiers && splitTiers.length > 1 && pax > 1;
+  const splitTotal = hasSplit ? splitTiers!.reduce((sum, t) => sum + t.count * t.pricePerPerson, 0) : 0;
+  const groupTotal = perAdult * pax;
   // Determine if we have mixed brands across segments
   const isMixedBrand = segmentBrands && segmentBrands.length > 1
     && new Set(segmentBrands.map((b) => b.brand)).size > 1;
@@ -291,6 +304,59 @@ function FareRow({
           )}
         </div>
       )}
+
+      {/* Split PNR pricing row — shows when split opportunity exists */}
+      {hasSplit && onToggleSplit && (
+        <div
+          onClick={(e) => { e.stopPropagation(); onToggleSplit(); }}
+          className="flex items-center gap-2 mt-[4px] pt-[4px] ml-[21px] cursor-pointer rounded-[4px] px-[6px] py-[3px] transition-all"
+          style={{
+            borderTop: "1px dashed #e8eaed",
+            background: checkedSplit ? "rgba(16,185,129,0.06)" : "transparent",
+            border: checkedSplit ? "1px solid rgba(16,185,129,0.25)" : "1px solid transparent",
+          }}
+        >
+          <div
+            className="shrink-0 flex items-center justify-center"
+            style={{
+              width: 13, height: 13, borderRadius: 3,
+              border: `1.5px solid ${checkedSplit ? "#10b981" : "#dadce0"}`,
+              background: checkedSplit ? "#10b981" : "transparent",
+            }}
+          >
+            {checkedSplit && <span style={{ color: "#fff", fontSize: 8, fontWeight: 900 }}>✓</span>}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-[4px] flex-wrap">
+              <span className="text-[7px] font-bold tracking-wider text-emerald-600 bg-emerald-50 border border-emerald-200 px-[4px] py-[0.5px] rounded-[2px]">
+                SPLIT PNR
+              </span>
+              {splitTiers!.map((t, i) => (
+                <span key={i} className="text-[8px] text-gray-600">
+                  {i > 0 && "+ "}
+                  {t.count}×{t.rbd} {pfmt(t.pricePerPerson)}
+                </span>
+              ))}
+            </div>
+            <div className="flex items-center gap-[6px] mt-[1px]">
+              <span className="text-[8px] font-semibold text-emerald-700">
+                {pfmt(splitTotal)} total
+              </span>
+              <span className="text-[7px] text-gray-400">
+                ({pfmt(splitTotal / pax)}/avg)
+              </span>
+              <span className="text-[7px] text-gray-400">
+                vs {pfmt(groupTotal)} all same
+              </span>
+              {groupTotal > splitTotal && (
+                <span className="text-[7px] font-semibold text-emerald-600">
+                  save {pfmt(groupTotal - splitTotal)}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -300,12 +366,20 @@ function FareRow({
 function CarrierFareTabs({
   option,
   selectedVariantIndices,
+  selectedSplitIndices,
   onVariantToggle,
+  onSplitToggle,
   color,
+  splitDetection,
+  totalPassengers,
 }: {
   option: Option;
   selectedVariantIndices: Set<number>;
+  selectedSplitIndices?: Set<number>;
   onVariantToggle: (optionId: string, variantIdx: number) => void;
+  onSplitToggle?: (optionId: string, variantIdx: number) => void;
+  splitDetection?: SplitPnrDetection | null;
+  totalPassengers?: number;
   color: string;
 }) {
   // Group variants by validating carrier, preserving original indices
@@ -392,8 +466,12 @@ function CarrierFareTabs({
         otherVariants={activeOtherVariants}
         option={option}
         selectedVariantIndices={selectedVariantIndices}
+        selectedSplitIndices={selectedSplitIndices}
         onVariantToggle={onVariantToggle}
+        onSplitToggle={onSplitToggle}
         color={color}
+        splitDetection={splitDetection}
+        totalPassengers={totalPassengers}
       />
     </div>
   );
@@ -405,15 +483,23 @@ function CabinComboAccordion({
   otherVariants,
   option,
   selectedVariantIndices,
+  selectedSplitIndices,
   onVariantToggle,
+  onSplitToggle,
   color,
+  splitDetection,
+  totalPassengers,
 }: {
   items: { variant: Variant; originalIndex: number }[];
   otherVariants: Variant[];
   option: Option;
   selectedVariantIndices: Set<number>;
+  selectedSplitIndices?: Set<number>;
   onVariantToggle: (optionId: string, variantIdx: number) => void;
+  onSplitToggle?: (optionId: string, variantIdx: number) => void;
   color: string;
+  splitDetection?: SplitPnrDetection | null;
+  totalPassengers?: number;
 }) {
   // Group by full cabin combo key (e.g. "Business+Economy")
   const cabinGroups = useMemo(() => {
@@ -517,9 +603,13 @@ function CabinComboAccordion({
                   refundable={v.refundable}
                   fareTerms={v.fareTerms}
                   checked={selectedVariantIndices.has(vi)}
+                  checkedSplit={selectedSplitIndices?.has(vi)}
                   onToggle={() => onVariantToggle(option.id, vi)}
+                  onToggleSplit={splitDetection?.tiers?.length ? () => onSplitToggle?.(option.id, vi) : undefined}
                   color={color}
                   segmentBrands={segBrands}
+                  splitTiers={splitDetection?.tiers}
+                  totalPassengers={totalPassengers}
                 />
               );
             })}
@@ -627,7 +717,9 @@ function OptionCard({
   option,
   color,
   selectedVariantIndices,
+  selectedSplitIndices,
   onVariantToggle,
+  onSplitToggle,
   onSelectAll,
   isAISuggested,
   isCheapest,
@@ -638,7 +730,9 @@ function OptionCard({
   option: Option;
   color: string;
   selectedVariantIndices: Set<number>;
+  selectedSplitIndices?: Set<number>;
   onVariantToggle: (optionId: string, variantIdx: number) => void;
+  onSplitToggle?: (optionId: string, variantIdx: number) => void;
   onSelectAll: (option: Option, select: boolean) => void;
   isAISuggested?: boolean;
   isCheapest?: boolean;
@@ -1073,8 +1167,12 @@ function OptionCard({
           <CarrierFareTabs
             option={option}
             selectedVariantIndices={selectedVariantIndices}
+            selectedSplitIndices={selectedSplitIndices}
             onVariantToggle={onVariantToggle}
+            onSplitToggle={onSplitToggle}
             color={color}
+            splitDetection={backendSplitDetection}
+            totalPassengers={totalPassengers}
           />
         </div>
       )}
@@ -4731,6 +4829,18 @@ export default function ComparisonBuilder({
     return init;
   });
 
+  // Split PNR selection state (mirrors sels structure)
+  const [splitSels, setSplitSels] = useState<SelectionState>(() => {
+    const init: SelectionState = {};
+    model.strategies.forEach((s) => {
+      init[s.id] = {};
+      s.slots.forEach((sl) => {
+        init[s.id][sl.id] = new Set();
+      });
+    });
+    return init;
+  });
+
   // AI suggested options per slot
   const [aiSuggested, setAiSuggested] = useState<Record<string, Record<string, AIOption[]>>>({});
 
@@ -4807,6 +4917,31 @@ What are your client's priorities?`;
       set.has(key) ? set.delete(key) : set.add(key);
       return { ...prev, [strategy.id]: { ...ss, [activeSlot]: set } };
     });
+    // Deselect split version when group version is toggled
+    setSplitSels((prev) => {
+      const ss = { ...(prev[strategy.id] || {}) };
+      const set = new Set(ss[activeSlot] || []);
+      const key = makeKey(optionId, variantIdx);
+      set.delete(key);
+      return { ...prev, [strategy.id]: { ...ss, [activeSlot]: set } };
+    });
+  };
+
+  const toggleSplitFare = (optionId: string, variantIdx: number) => {
+    const key = makeKey(optionId, variantIdx);
+    setSplitSels((prev) => {
+      const ss = { ...(prev[strategy.id] || {}) };
+      const set = new Set(ss[activeSlot] || []);
+      set.has(key) ? set.delete(key) : set.add(key);
+      return { ...prev, [strategy.id]: { ...ss, [activeSlot]: set } };
+    });
+    // Deselect group version when split version is toggled
+    setSels((prev) => {
+      const ss = { ...(prev[strategy.id] || {}) };
+      const set = new Set(ss[activeSlot] || []);
+      set.delete(key);
+      return { ...prev, [strategy.id]: { ...ss, [activeSlot]: set } };
+    });
   };
 
   const toggleAllFares = (opt: Option, shouldSelect: boolean) => {
@@ -4834,6 +4969,16 @@ What are your client's priorities?`;
 
   const getSelectedVariantIndices = (optionId: string): Set<number> => {
     const keys = sels[strategy.id]?.[activeSlot] || new Set<string>();
+    const result = new Set<number>();
+    keys.forEach((key) => {
+      const [id, vi] = key.split(":");
+      if (id === optionId) result.add(parseInt(vi));
+    });
+    return result;
+  };
+
+  const getSelectedSplitIndices = (optionId: string): Set<number> => {
+    const keys = splitSels[strategy.id]?.[activeSlot] || new Set<string>();
     const result = new Set<number>();
     keys.forEach((key) => {
       const [id, vi] = key.split(":");
@@ -5522,7 +5667,9 @@ Use plain text. Be direct and expert. Reference specific carriers, flight number
                     option={opt}
                     color={strategy.color}
                     selectedVariantIndices={getSelectedVariantIndices(opt.id)}
+                    selectedSplitIndices={getSelectedSplitIndices(opt.id)}
                     onVariantToggle={toggleFare}
+                    onSplitToggle={toggleSplitFare}
                     onSelectAll={toggleAllFares}
                     isAISuggested={isAISuggestedOpt(strategy.id, activeSlot, opt.id)}
                     isCheapest={isCheapest}

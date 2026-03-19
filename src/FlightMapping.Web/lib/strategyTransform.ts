@@ -377,39 +377,38 @@ function pruneVariants(variants: Variant[]): { kept: Variant[]; other: Variant[]
   const kept: Variant[] = [];
 
   for (const [, group] of cabinGroups) {
-    // Sort by price ascending
     const sorted = [...group].sort((a, b) => a.perAdult - b.perAdult);
 
     // Always keep cheapest
     const cheapest = sorted[0];
     kept.push(cheapest);
 
-    // Keep cheapest refundable if different price (>$15 gap) and actually refundable
-    const cheapestRefundable = sorted.find(
-      (v) => v.refundable && Math.abs(v.perAdult - cheapest.perAdult) > 15
-    );
-    if (cheapestRefundable) kept.push(cheapestRefundable);
-
-    // Keep cheapest non-refundable if the cheapest overall was refundable
+    // Always keep the opposite refundability if meaningfully different (>$100 gap)
     if (cheapest.refundable) {
-      const cheapestNonRef = sorted.find(
-        (v) => !v.refundable && Math.abs(v.perAdult - cheapest.perAdult) > 15
-      );
+      const cheapestNonRef = sorted.find((v) => !v.refundable && v.perAdult - cheapest.perAdult > 100);
       if (cheapestNonRef) kept.push(cheapestNonRef);
+    } else {
+      const cheapestRef = sorted.find((v) => v.refundable && v.perAdult - cheapest.perAdult > 100);
+      if (cheapestRef) kept.push(cheapestRef);
     }
 
-    // If there's a significant price tier we haven't captured (>$200 gap from anything kept)
+    // Keep cheapest refundable if not yet kept and different price (>$15 gap)
+    if (!kept.some((k) => k.refundable && k.cabins.join("+") === cheapest.cabins.join("+"))) {
+      const ref = sorted.find((v) => v.refundable && Math.abs(v.perAdult - cheapest.perAdult) > 15);
+      if (ref) kept.push(ref);
+    }
+
+    // Capture significant price tiers (>$200 gap from anything already kept in this cabin combo)
+    const cabinKey = cheapest.cabins.join("+");
     for (const v of sorted) {
       const alreadyNear = kept.some(
-        (k) => k.cabins.join("+") === v.cabins.join("+") && Math.abs(k.perAdult - v.perAdult) < 200
+        (k) => k.cabins.join("+") === cabinKey && Math.abs(k.perAdult - v.perAdult) < 200
       );
-      if (!alreadyNear) {
-        kept.push(v);
-      }
+      if (!alreadyNear) kept.push(v);
     }
   }
 
-  // Deduplicate: remove variants within $15 of each other with same refundability
+  // Deduplicate: remove variants within $15 of each other with same refundability + same cabin
   const deduped: Variant[] = [];
   const sortedKept = [...kept].sort((a, b) => a.perAdult - b.perAdult);
   for (const v of sortedKept) {
@@ -425,7 +424,22 @@ function pruneVariants(variants: Variant[]): { kept: Variant[]; other: Variant[]
   // Cap at 8 variants max, sorted by price
   const final = deduped.slice(0, 8);
   const finalSet = new Set(final);
-  const other = variants.filter((v) => !finalSet.has(v)).sort((a, b) => a.perAdult - b.perAdult);
+
+  // Dedup "Other" fares too — remove near-duplicates of kept items
+  const rawOther = variants.filter((v) => !finalSet.has(v)).sort((a, b) => a.perAdult - b.perAdult);
+  const other: Variant[] = [];
+  for (const v of rawOther) {
+    const dupeOfKept = final.some(
+      (k) => Math.abs(k.perAdult - v.perAdult) < 30 && k.cabins.join("+") === v.cabins.join("+")
+    );
+    const dupeOfOther = other.some(
+      (o) => Math.abs(o.perAdult - v.perAdult) < 30 &&
+        o.refundable === v.refundable &&
+        o.cabins.join("+") === v.cabins.join("+")
+    );
+    if (!dupeOfKept && !dupeOfOther) other.push(v);
+  }
+
   return { kept: final, other };
 }
 
